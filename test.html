@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XSaved v2 - Database Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        
+        .test-section {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+            transition: all 0.2s;
+        }
+        
+        .button:hover {
+            background: #5a67d8;
+            transform: translateY(-1px);
+        }
+        
+        .button:disabled {
+            background: #cbd5e0;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .output {
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .stat-card {
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2d3748;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #718096;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚀 XSaved v2 Database Test</h1>
+        <p>Testing IndexedDB performance with optimized schemas</p>
+    </div>
+
+    <div class="test-section">
+        <h2>🔧 Database Operations</h2>
+        <p>Test the core IndexedDB functionality with sample bookmark data.</p>
+        
+        <button id="initBtn" class="button">Initialize Database</button>
+        <button id="basicTestBtn" class="button" disabled>Run Basic Tests</button>
+        <button id="perfTestBtn" class="button" disabled>Performance Tests</button>
+        <button id="clearBtn" class="button" disabled>Clear Database</button>
+        
+        <div id="output" class="output"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>📊 Database Statistics</h2>
+        <button id="statsBtn" class="button" disabled>Refresh Stats</button>
+        
+        <div id="statsGrid" class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="bookmarkCount">-</div>
+                <div class="stat-label">Bookmarks</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="tagCount">-</div>
+                <div class="stat-label">Tags</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="dbVersion">-</div>
+                <div class="stat-label">DB Version</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="queryTime">-</div>
+                <div class="stat-label">Last Query (ms)</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>🔍 Search Testing</h2>
+        <p>Test the optimized multi-entry indexes for tags and full-text search.</p>
+        
+        <input type="text" id="tagSearch" placeholder="Search by tag (e.g., 'ai', 'javascript')" 
+               style="padding: 10px; border: 1px solid #e2e8f0; border-radius: 6px; width: 300px; margin-right: 10px;">
+        <button id="searchBtn" class="button" disabled>Search</button>
+        
+        <div id="searchResults" class="output" style="margin-top: 15px; display: none;">
+            <!-- Search results will appear here -->
+        </div>
+    </div>
+
+    <!-- Import our database module as ES6 module -->
+    <script type="module">
+        // Since we can't directly import TypeScript in browser, 
+        // we'll include the compiled JavaScript here for testing
+        
+        // Note: In real development, you'd compile TypeScript to JavaScript first
+        // For now, let's create a simplified version for testing
+        
+        class SimplifiedXSavedDB {
+            constructor() {
+                this.db = null;
+                this.isInitialized = false;
+            }
+            
+            async initialize() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open('XSavedDB', 1);
+                    
+                    request.onerror = () => reject(new Error('Failed to open database'));
+                    
+                    request.onsuccess = (event) => {
+                        this.db = event.target.result;
+                        this.isInitialized = true;
+                        resolve({ success: true });
+                    };
+                    
+                    request.onupgradeneeded = (event) => {
+                        const db = event.target.result;
+                        
+                        // Create bookmarks store
+                        const bookmarkStore = db.createObjectStore('bookmarks', { keyPath: 'id' });
+                        bookmarkStore.createIndex('created_at', 'created_at');
+                        bookmarkStore.createIndex('author', 'author');
+                        bookmarkStore.createIndex('tags', 'tags', { multiEntry: true });
+                        bookmarkStore.createIndex('bookmark_timestamp', 'bookmark_timestamp');
+                        bookmarkStore.createIndex('text_search', 'textTokens', { multiEntry: true });
+                        
+                        console.log('✅ Database schema created');
+                    };
+                });
+            }
+            
+            async addBookmark(bookmark) {
+                const startTime = performance.now();
+                
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction(['bookmarks'], 'readwrite');
+                    const store = transaction.objectStore('bookmarks');
+                    
+                    const bookmarkToAdd = {
+                        ...bookmark,
+                        textTokens: this.tokenizeText(bookmark.text),
+                        bookmark_timestamp: bookmark.bookmark_timestamp || new Date().toISOString()
+                    };
+                    
+                    const request = store.add(bookmarkToAdd);
+                    
+                    request.onsuccess = () => {
+                        const duration = performance.now() - startTime;
+                        resolve({ 
+                            success: true, 
+                            data: bookmarkToAdd,
+                            metrics: { duration, operation: 'addBookmark' }
+                        });
+                    };
+                    
+                    request.onerror = () => {
+                        reject(new Error('Failed to add bookmark'));
+                    };
+                });
+            }
+            
+            async getRecentBookmarks(limit = 50) {
+                const startTime = performance.now();
+                
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction(['bookmarks'], 'readonly');
+                    const store = transaction.objectStore('bookmarks');
+                    const index = store.index('bookmark_timestamp');
+                    
+                    const results = [];
+                    let count = 0;
+                    
+                    const request = index.openCursor(null, 'prev');
+                    
+                    request.onsuccess = (event) => {
+                        const cursor = event.target.result;
+                        
+                        if (cursor && count < limit) {
+                            results.push(cursor.value);
+                            count++;
+                            cursor.continue();
+                        } else {
+                            const duration = performance.now() - startTime;
+                            resolve({
+                                success: true,
+                                data: results,
+                                metrics: { duration, operation: 'getRecentBookmarks' }
+                            });
+                        }
+                    };
+                    
+                    request.onerror = () => reject(new Error('Failed to get recent bookmarks'));
+                });
+            }
+            
+            async getBookmarksByTag(tag) {
+                const startTime = performance.now();
+                
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction(['bookmarks'], 'readonly');
+                    const store = transaction.objectStore('bookmarks');
+                    const index = store.index('tags');
+                    
+                    const request = index.getAll(tag);
+                    
+                    request.onsuccess = () => {
+                        const duration = performance.now() - startTime;
+                        resolve({
+                            success: true,
+                            data: request.result,
+                            metrics: { duration, operation: 'getBookmarksByTag' }
+                        });
+                    };
+                    
+                    request.onerror = () => reject(new Error('Failed to search by tag'));
+                });
+            }
+            
+            async getStats() {
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction(['bookmarks'], 'readonly');
+                    const store = transaction.objectStore('bookmarks');
+                    const request = store.count();
+                    
+                    request.onsuccess = () => {
+                        resolve({
+                            success: true,
+                            data: {
+                                bookmarks: request.result,
+                                tags: 0, // Simplified for test
+                                version: 1,
+                                initialized: this.isInitialized
+                            }
+                        });
+                    };
+                    
+                    request.onerror = () => reject(new Error('Failed to get stats'));
+                });
+            }
+            
+            tokenizeText(text) {
+                return text
+                    .toLowerCase()
+                    .replace(/[^\w\s#@]/g, ' ')
+                    .split(/\s+/)
+                    .filter(token => token.length > 2)
+                    .slice(0, 50);
+            }
+        }
+        
+        // Initialize test environment
+        const db = new SimplifiedXSavedDB();
+        let lastQueryTime = 0;
+        
+        // Sample data
+        const sampleBookmarks = [
+            {
+                id: '1742891234567890123',
+                text: 'Amazing thread about AI developments and machine learning breakthroughs in 2024! #AI #MachineLearning #Tech',
+                author: 'levelsio',
+                created_at: '2024-01-15T10:30:00.000Z',
+                tags: ['ai', 'machinelearning', 'tech'],
+                media_urls: ['https://pbs.twimg.com/media/example.jpg']
+            },
+            {
+                id: '1742891234567890124',
+                text: 'React vs Vue vs Angular comparison 2024 - which framework should you choose? #React #Vue #Angular #JavaScript',
+                author: 'wesbos',
+                created_at: '2024-01-16T14:20:00.000Z',
+                tags: ['react', 'vue', 'angular', 'javascript'],
+                media_urls: []
+            },
+            {
+                id: '1742891234567890125',
+                text: 'Building scalable web applications with Next.js and TypeScript - best practices guide',
+                author: 'vercel',
+                created_at: '2024-01-17T09:15:00.000Z',
+                tags: ['nextjs', 'typescript', 'webdev'],
+                media_urls: []
+            }
+        ];
+        
+        // UI Elements
+        const output = document.getElementById('output');
+        const initBtn = document.getElementById('initBtn');
+        const basicTestBtn = document.getElementById('basicTestBtn');
+        const perfTestBtn = document.getElementById('perfTestBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const statsBtn = document.getElementById('statsBtn');
+        const searchBtn = document.getElementById('searchBtn');
+        const tagSearch = document.getElementById('tagSearch');
+        const searchResults = document.getElementById('searchResults');
+        
+        // Utility functions
+        function log(message) {
+            output.textContent += message + '\n';
+            output.scrollTop = output.scrollHeight;
+        }
+        
+        function clearLog() {
+            output.textContent = '';
+        }
+        
+        function updateStats(stats) {
+            document.getElementById('bookmarkCount').textContent = stats.bookmarks;
+            document.getElementById('tagCount').textContent = stats.tags;
+            document.getElementById('dbVersion').textContent = stats.version;
+            document.getElementById('queryTime').textContent = lastQueryTime.toFixed(2);
+        }
+        
+        // Event handlers
+        initBtn.addEventListener('click', async () => {
+            try {
+                clearLog();
+                log('🚀 Initializing XSaved Database...');
+                
+                const result = await db.initialize();
+                if (result.success) {
+                    log('✅ Database initialized successfully!');
+                    
+                    // Enable other buttons
+                    basicTestBtn.disabled = false;
+                    perfTestBtn.disabled = false;
+                    clearBtn.disabled = false;
+                    statsBtn.disabled = false;
+                    searchBtn.disabled = false;
+                    initBtn.disabled = true;
+                } else {
+                    log('❌ Failed to initialize database');
+                }
+            } catch (error) {
+                log(`❌ Error: ${error.message}`);
+            }
+        });
+        
+        basicTestBtn.addEventListener('click', async () => {
+            try {
+                clearLog();
+                log('🧪 Running basic database tests...\n');
+                
+                // Add sample bookmarks
+                log('📝 Adding sample bookmarks...');
+                for (const bookmark of sampleBookmarks) {
+                    const result = await db.addBookmark(bookmark);
+                    if (result.success) {
+                        log(`✅ Added bookmark: "${bookmark.text.substring(0, 40)}..." (${result.metrics.duration.toFixed(2)}ms)`);
+                        lastQueryTime = result.metrics.duration;
+                    }
+                }
+                
+                // Test recent bookmarks
+                log('\n📋 Testing recent bookmarks query...');
+                const recentResult = await db.getRecentBookmarks(10);
+                if (recentResult.success) {
+                    log(`✅ Retrieved ${recentResult.data.length} recent bookmarks (${recentResult.metrics.duration.toFixed(2)}ms)`);
+                    lastQueryTime = recentResult.metrics.duration;
+                }
+                
+                log('\n🎉 Basic tests completed!');
+                
+            } catch (error) {
+                log(`❌ Error: ${error.message}`);
+            }
+        });
+        
+        perfTestBtn.addEventListener('click', async () => {
+            try {
+                clearLog();
+                log('⚡ Running performance tests...\n');
+                
+                const testCount = 100;
+                const startTime = performance.now();
+                
+                log(`📊 Adding ${testCount} test bookmarks...`);
+                let successCount = 0;
+                
+                for (let i = 0; i < testCount; i++) {
+                    const testBookmark = {
+                        id: `test_bookmark_${i}`,
+                        text: `Test bookmark ${i} with content about technology and programming #test #perf`,
+                        author: `user${i % 10}`,
+                        created_at: new Date(Date.now() - i * 60000).toISOString(),
+                        tags: [`tag${i % 5}`, 'test', 'performance']
+                    };
+                    
+                    const result = await db.addBookmark(testBookmark);
+                    if (result.success) successCount++;
+                }
+                
+                const insertDuration = performance.now() - startTime;
+                log(`✅ Inserted ${successCount}/${testCount} bookmarks in ${insertDuration.toFixed(2)}ms`);
+                log(`   Average: ${(insertDuration / successCount).toFixed(2)}ms per bookmark`);
+                
+                // Test search performance
+                log('\n🔍 Testing search performance...');
+                const searchStart = performance.now();
+                const searchResult = await db.getBookmarksByTag('test');
+                const searchDuration = performance.now() - searchStart;
+                
+                if (searchResult.success) {
+                    log(`✅ Tag search found ${searchResult.data.length} results in ${searchDuration.toFixed(2)}ms`);
+                    lastQueryTime = searchDuration;
+                }
+                
+                log('\n🚀 Performance tests completed!');
+                
+            } catch (error) {
+                log(`❌ Error: ${error.message}`);
+            }
+        });
+        
+        searchBtn.addEventListener('click', async () => {
+            const tag = tagSearch.value.trim();
+            if (!tag) return;
+            
+            try {
+                const result = await db.getBookmarksByTag(tag);
+                lastQueryTime = result.metrics.duration;
+                
+                searchResults.style.display = 'block';
+                searchResults.textContent = `Found ${result.data.length} bookmarks with tag "${tag}" (${result.metrics.duration.toFixed(2)}ms):\n\n`;
+                
+                result.data.forEach((bookmark, index) => {
+                    searchResults.textContent += `${index + 1}. ${bookmark.author}: "${bookmark.text.substring(0, 60)}..."\n`;
+                    searchResults.textContent += `   Tags: [${bookmark.tags.join(', ')}]\n\n`;
+                });
+                
+            } catch (error) {
+                searchResults.textContent = `Error: ${error.message}`;
+            }
+        });
+        
+        statsBtn.addEventListener('click', async () => {
+            try {
+                const result = await db.getStats();
+                if (result.success) {
+                    updateStats(result.data);
+                }
+            } catch (error) {
+                log(`Error getting stats: ${error.message}`);
+            }
+        });
+        
+        clearBtn.addEventListener('click', async () => {
+            if (confirm('Are you sure you want to clear all data?')) {
+                try {
+                    // Close current connection
+                    if (db.db) {
+                        db.db.close();
+                    }
+                    
+                    // Delete database
+                    const deleteRequest = indexedDB.deleteDatabase('XSavedDB');
+                    deleteRequest.onsuccess = () => {
+                        log('🗑️ Database cleared successfully');
+                        initBtn.disabled = false;
+                        basicTestBtn.disabled = true;
+                        perfTestBtn.disabled = true;
+                        clearBtn.disabled = true;
+                        statsBtn.disabled = true;
+                        searchBtn.disabled = true;
+                        
+                        // Reset stats
+                        updateStats({ bookmarks: 0, tags: 0, version: '-' });
+                        db.isInitialized = false;
+                    };
+                } catch (error) {
+                    log(`Error clearing database: ${error.message}`);
+                }
+            }
+        });
+        
+        // Initialize page
+        log('Ready to test XSaved v2 Database! Click "Initialize Database" to start.');
+        
+    </script>
+</body>
+</html> 
