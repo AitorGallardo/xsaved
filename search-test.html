@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XSaved v2 - Search Engine Tests</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .test-section {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 25px;
+            border-left: 5px solid #4CAF50;
+        }
+
+        .test-section h2 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+
+        .test-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .test-button {
+            background: linear-gradient(45deg, #3498db, #2980b9);
+            color: white;
+            border: none;
+            padding: 15px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
+        }
+
+        .test-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4);
+        }
+
+        .test-button:active {
+            transform: translateY(0);
+        }
+
+        .search-demo {
+            background: white;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .search-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .control-group label {
+            font-weight: 600;
+            color: #555;
+        }
+
+        .control-group input, .control-group select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+
+        .search-results {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+            min-height: 200px;
+            overflow-y: auto;
+            max-height: 400px;
+        }
+
+        .result-item {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .result-text {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #2c3e50;
+        }
+
+        .result-meta {
+            font-size: 0.9em;
+            color: #666;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .result-tags {
+            display: flex;
+            gap: 5px;
+            margin-top: 8px;
+        }
+
+        .tag {
+            background: #3498db;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+        }
+
+        .performance-indicator {
+            background: #27ae60;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+
+        .performance-slow {
+            background: #e74c3c;
+        }
+
+        .log-output {
+            background: #2c3e50;
+            color: #ecf0f1;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        .status {
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            font-weight: 600;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .quick-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #3498db;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 XSaved Search Engine Tests</h1>
+            <p>Component 2: Search & Filtering Engine Validation</p>
+        </div>
+
+        <div class="content">
+            <!-- Quick Test Section -->
+            <div class="test-section">
+                <h2>🚀 Quick Test Suite</h2>
+                <div class="test-grid">
+                    <button class="test-button" onclick="runSetup()">1️⃣ Setup Test Data</button>
+                    <button class="test-button" onclick="runBasicTests()">2️⃣ Basic Search</button>
+                    <button class="test-button" onclick="runAdvancedTests()">3️⃣ Advanced Search</button>
+                    <button class="test-button" onclick="runPerformanceTests()">4️⃣ Performance Tests</button>
+                    <button class="test-button" onclick="runAllTests()">🧪 Run All Tests</button>
+                    <button class="test-button" onclick="cleanupData()">🧹 Cleanup</button>
+                </div>
+                <div id="testStatus"></div>
+            </div>
+
+            <!-- Interactive Search Demo -->
+            <div class="test-section">
+                <h2>🎯 Interactive Search Demo</h2>
+                <div class="search-demo">
+                    <input type="text" class="search-input" id="searchText" placeholder="Search bookmarks... (try 'React tutorial', #javascript, @wesbos)">
+                    
+                    <div class="search-controls">
+                        <div class="control-group">
+                            <label>Tags (comma-separated):</label>
+                            <input type="text" id="searchTags" placeholder="react, tutorial">
+                        </div>
+                        <div class="control-group">
+                            <label>Author:</label>
+                            <input type="text" id="searchAuthor" placeholder="wesbos">
+                        </div>
+                        <div class="control-group">
+                            <label>Has Media:</label>
+                            <select id="searchMedia">
+                                <option value="">Any</option>
+                                <option value="true">Yes</option>
+                                <option value="false">No</option>
+                            </select>
+                        </div>
+                        <div class="control-group">
+                            <label>Sort By:</label>
+                            <select id="searchSort">
+                                <option value="relevance">Relevance</option>
+                                <option value="date">Date</option>
+                                <option value="author">Author</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button class="test-button" onclick="performSearch()" style="width: 100%;">🔍 Search</button>
+                    
+                    <div id="searchResults" class="search-results"></div>
+                </div>
+            </div>
+
+            <!-- Performance Dashboard -->
+            <div class="test-section">
+                <h2>📊 Performance Dashboard</h2>
+                <div class="quick-stats" id="performanceStats">
+                    <div class="stat-card">
+                        <div class="stat-value" id="avgSearchTime">--</div>
+                        <div class="stat-label">Avg Search Time (ms)</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="cacheHitRate">--</div>
+                        <div class="stat-label">Cache Hit Rate (%)</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalQueries">0</div>
+                        <div class="stat-label">Total Queries</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="fastestQuery">--</div>
+                        <div class="stat-label">Fastest Query (ms)</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Console Output -->
+            <div class="test-section">
+                <h2>📝 Console Output</h2>
+                <div id="consoleOutput" class="log-output">Ready for testing... Open browser DevTools Console for detailed logs.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load our search engine modules -->
+    <script src="search-test-modules.js"></script>
+    
+    <script type="module">
+        // Performance tracking
+        window.searchStats = {
+            totalQueries: 0,
+            searchTimes: [],
+            cacheHits: 0
+        };
+
+        // Console capture
+        const originalLog = console.log;
+        const consoleOutput = document.getElementById('consoleOutput');
+        
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            
+            const message = args.map(arg => 
+                typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+            ).join(' ');
+            
+            consoleOutput.textContent += message + '\n';
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        };
+
+        // Status helper
+        window.showStatus = function(message, type = 'info') {
+            const statusDiv = document.getElementById('testStatus');
+            statusDiv.innerHTML = `<div class="status ${type}">${message}</div>`;
+        };
+
+        // Update performance stats
+        window.updateStats = function() {
+            const stats = window.searchStats;
+            const avgTime = stats.searchTimes.length > 0 ? 
+                (stats.searchTimes.reduce((a, b) => a + b, 0) / stats.searchTimes.length).toFixed(1) : '--';
+            const fastestTime = stats.searchTimes.length > 0 ? Math.min(...stats.searchTimes).toFixed(1) : '--';
+            const hitRate = stats.totalQueries > 0 ? ((stats.cacheHits / stats.totalQueries) * 100).toFixed(1) : '--';
+
+            document.getElementById('avgSearchTime').textContent = avgTime;
+            document.getElementById('cacheHitRate').textContent = hitRate;
+            document.getElementById('totalQueries').textContent = stats.totalQueries;
+            document.getElementById('fastestQuery').textContent = fastestTime;
+        };
+
+        console.log('🔧 XSaved Search Engine Test Environment Ready!');
+        console.log('📋 Instructions:');
+        console.log('1. Click "Setup Test Data" to initialize sample bookmarks');
+        console.log('2. Run individual test suites or "Run All Tests"');
+        console.log('3. Try the Interactive Search Demo');
+        console.log('4. Monitor performance in the dashboard');
+        console.log('💡 Open DevTools Console for detailed logs');
+    </script>
+
+    <script>
+        // Test functions (simplified versions - will delegate to actual modules when loaded)
+        
+        async function runSetup() {
+            showStatus('Setting up test data...', 'info');
+            try {
+                // This will call the actual setup function when modules are loaded
+                if (window.testSearchEngine && window.testSearchEngine.setupTestData) {
+                    await window.testSearchEngine.setupTestData();
+                    showStatus('✅ Test data setup complete!', 'success');
+                } else {
+                    // Fallback for when modules aren't loaded yet
+                    console.log('🛠️ Setting up search test data...');
+                    console.log('✅ Test data setup would be complete (modules not loaded)');
+                    showStatus('⚠️ Setup simulated - load actual modules for real testing', 'info');
+                }
+            } catch (error) {
+                console.error('❌ Setup failed:', error);
+                showStatus('❌ Setup failed: ' + error.message, 'error');
+            }
+        }
+
+        async function runBasicTests() {
+            showStatus('Running basic search tests...', 'info');
+            try {
+                if (window.testSearchEngine && window.testSearchEngine.testBasicSearch) {
+                    await window.testSearchEngine.testBasicSearch();
+                    showStatus('✅ Basic tests completed!', 'success');
+                } else {
+                    console.log('🔍 Running basic search tests...');
+                    console.log('✅ Basic tests would complete (modules not loaded)');
+                    showStatus('⚠️ Basic tests simulated - load actual modules for real testing', 'info');
+                }
+            } catch (error) {
+                console.error('❌ Basic tests failed:', error);
+                showStatus('❌ Basic tests failed: ' + error.message, 'error');
+            }
+        }
+
+        async function runAdvancedTests() {
+            showStatus('Running advanced search tests...', 'info');
+            try {
+                if (window.testSearchEngine && window.testSearchEngine.testAdvancedSearch) {
+                    await window.testSearchEngine.testAdvancedSearch();
+                    showStatus('✅ Advanced tests completed!', 'success');
+                } else {
+                    console.log('🚀 Running advanced search tests...');
+                    console.log('✅ Advanced tests would complete (modules not loaded)');
+                    showStatus('⚠️ Advanced tests simulated - load actual modules for real testing', 'info');
+                }
+            } catch (error) {
+                console.error('❌ Advanced tests failed:', error);
+                showStatus('❌ Advanced tests failed: ' + error.message, 'error');
+            }
+        }
+
+        async function runPerformanceTests() {
+            showStatus('Running performance tests...', 'info');
+            try {
+                if (window.testSearchEngine && window.testSearchEngine.testSearchPerformance) {
+                    await window.testSearchEngine.testSearchPerformance();
+                    showStatus('✅ Performance tests completed!', 'success');
+                } else {
+                    console.log('⚡ Running performance tests...');
+                    console.log('✅ Performance tests would complete (modules not loaded)');
+                    showStatus('⚠️ Performance tests simulated - load actual modules for real testing', 'info');
+                }
+                updateStats();
+            } catch (error) {
+                console.error('❌ Performance tests failed:', error);
+                showStatus('❌ Performance tests failed: ' + error.message, 'error');
+            }
+        }
+
+        async function runAllTests() {
+            showStatus('Running complete test suite...', 'info');
+            try {
+                if (window.testSearchEngine && window.testSearchEngine.runSearchEngineTests) {
+                    await window.testSearchEngine.runSearchEngineTests();
+                    showStatus('🎉 All tests completed successfully!', 'success');
+                } else {
+                    console.log('🧪 Running complete test suite...');
+                    await runSetup();
+                    await runBasicTests();
+                    await runAdvancedTests();
+                    await runPerformanceTests();
+                    console.log('🎉 All tests completed!');
+                    showStatus('🎉 All tests completed (simulated)!', 'success');
+                }
+                updateStats();
+            } catch (error) {
+                console.error('❌ Test suite failed:', error);
+                showStatus('❌ Test suite failed: ' + error.message, 'error');
+            }
+        }
+
+        async function cleanupData() {
+            showStatus('Cleaning up test data...', 'info');
+            try {
+                if (window.testSearchEngine && window.testSearchEngine.cleanupTestData) {
+                    await window.testSearchEngine.cleanupTestData();
+                    showStatus('✅ Cleanup completed!', 'success');
+                } else {
+                    console.log('🧹 Cleaning up test data...');
+                    console.log('✅ Cleanup would complete (modules not loaded)');
+                    showStatus('⚠️ Cleanup simulated - load actual modules for real testing', 'info');
+                }
+            } catch (error) {
+                console.error('❌ Cleanup failed:', error);
+                showStatus('❌ Cleanup failed: ' + error.message, 'error');
+            }
+        }
+
+        async function performSearch() {
+            const text = document.getElementById('searchText').value;
+            const tags = document.getElementById('searchTags').value;
+            const author = document.getElementById('searchAuthor').value;
+            const hasMedia = document.getElementById('searchMedia').value;
+            const sortBy = document.getElementById('searchSort').value;
+
+            const query = {
+                text: text || undefined,
+                tags: tags ? tags.split(',').map(tag => tag.trim()) : undefined,
+                author: author || undefined,
+                hasMedia: hasMedia ? hasMedia === 'true' : undefined,
+                sortBy: sortBy || 'relevance'
+            };
+
+            console.log('🔍 Performing search:', query);
+
+            const resultsDiv = document.getElementById('searchResults');
+            resultsDiv.innerHTML = '<div class="status info">Searching...</div>';
+
+            try {
+                // Track performance
+                const startTime = performance.now();
+                
+                let result;
+                if (window.testSearchEngine && window.testSearchEngine.searchEngine) {
+                    result = await window.testSearchEngine.searchEngine.search(query);
+                } else {
+                    // Simulate search result
+                    await new Promise(resolve => setTimeout(resolve, Math.random() * 50 + 10));
+                    result = {
+                        bookmarks: [
+                            {
+                                bookmark: {
+                                    id: 'demo_1',
+                                    text: 'Amazing React tutorial with TypeScript - simulated result',
+                                    author: 'wesbos',
+                                    tags: ['react', 'typescript', 'tutorial'],
+                                    media_urls: ['https://example.com/image.jpg']
+                                },
+                                score: 0.95
+                            }
+                        ],
+                        totalCount: 1,
+                        queryTime: performance.now() - startTime
+                    };
+                }
+
+                const queryTime = performance.now() - startTime;
+                
+                // Update stats
+                window.searchStats.totalQueries++;
+                window.searchStats.searchTimes.push(queryTime);
+                updateStats();
+
+                // Display results
+                displaySearchResults(result);
+
+            } catch (error) {
+                console.error('❌ Search failed:', error);
+                resultsDiv.innerHTML = `<div class="status error">Search failed: ${error.message}</div>`;
+            }
+        }
+
+        function displaySearchResults(result) {
+            const resultsDiv = document.getElementById('searchResults');
+            
+            if (result.bookmarks.length === 0) {
+                resultsDiv.innerHTML = '<div class="status info">No results found</div>';
+                return;
+            }
+
+            const performanceClass = result.queryTime <= 50 ? '' : 'performance-slow';
+            
+            let html = `
+                <div class="status success">
+                    Found ${result.totalCount} results 
+                    <span class="performance-indicator ${performanceClass}">
+                        ${result.queryTime.toFixed(2)}ms
+                    </span>
+                </div>
+            `;
+
+            result.bookmarks.forEach(item => {
+                const bookmark = item.bookmark;
+                html += `
+                    <div class="result-item">
+                        <div class="result-text">${bookmark.text}</div>
+                        <div class="result-meta">
+                            <span>👤 ${bookmark.author}</span>
+                            <span>⭐ Score: ${(item.score || 1).toFixed(2)}</span>
+                            ${bookmark.media_urls && bookmark.media_urls.length > 0 ? '<span>📷 Has Media</span>' : ''}
+                        </div>
+                        <div class="result-tags">
+                            ${bookmark.tags.map(tag => `<span class="tag">#${tag}</span>`).join('')}
+                        </div>
+                    </div>
+                `;
+            });
+
+            resultsDiv.innerHTML = html;
+        }
+
+        // Auto-search as user types (with debouncing)
+        let searchTimeout;
+        document.getElementById('searchText').addEventListener('input', function(e) {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                if (e.target.value.length >= 3) {
+                    performSearch();
+                }
+            }, 500);
+        });
+    </script>
+</body>
+</html> 
