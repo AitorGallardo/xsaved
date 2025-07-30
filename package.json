@@ -1,0 +1,17 @@
+{
+  "name": "xsaved-extension-v2",
+  "version": "2.0.0",
+  "description": "Local-first Twitter bookmark management Chrome extension",
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "clean": "rm -rf dist",
+    "rebuild": "npm run clean && npm run build",
+    "dev": "npm run build:watch"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/chrome": "^0.0.250"
+  },
+  "private": true
+} 

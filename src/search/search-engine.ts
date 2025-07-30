@@ -229,7 +229,9 @@ export class SearchEngine {
     if (this.queryCache.size >= this.config.caching.maxCacheSize) {
       // Remove oldest entry
       const oldestKey = this.queryCache.keys().next().value;
-      this.queryCache.delete(oldestKey);
+      if (oldestKey) {
+        this.queryCache.delete(oldestKey);
+      }
     }
     
     this.queryCache.set(cacheKey, {

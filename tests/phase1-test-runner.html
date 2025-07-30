@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XSaved Extension v2 - Phase 1 Test Suite</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .test-panel {
+            background: #2d2d2d;
+            border-radius: 8px;
+            padding: 25px;
+            margin-bottom: 20px;
+            border: 1px solid #444;
+        }
+
+        .test-panel h2 {
+            color: #64b5f6;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .test-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:disabled {
+            background: #555;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn.health {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+
+        .btn.clear {
+            background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+        }
+
+        .console {
+            background: #1e1e1e;
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 15px;
+            height: 400px;
+            overflow-y: auto;
+            font-family: 'Monaco', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .console-line {
+            margin-bottom: 4px;
+            word-wrap: break-word;
+        }
+
+        .console-line.info { color: #81c784; }
+        .console-line.success { color: #4caf50; font-weight: bold; }
+        .console-line.error { color: #f44336; font-weight: bold; }
+        .console-line.warning { color: #ff9800; }
+        .console-line.test { color: #2196f3; }
+        .console-line.timestamp { color: #666; font-size: 11px; }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: #333;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+            border: 1px solid #555;
+        }
+
+        .stat-card h3 {
+            color: #64b5f6;
+            font-size: 0.9em;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat-card .value {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #4caf50;
+        }
+
+        .stat-card .value.failed {
+            color: #f44336;
+        }
+
+        .progress-bar {
+            background: #333;
+            border-radius: 4px;
+            overflow: hidden;
+            height: 8px;
+            margin: 15px 0;
+        }
+
+        .progress-fill {
+            background: linear-gradient(90deg, #11998e 0%, #38ef7d 100%);
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .test-details {
+            background: #2a2a2a;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 15px;
+            border-left: 4px solid #64b5f6;
+        }
+
+        .test-details h4 {
+            color: #64b5f6;
+            margin-bottom: 10px;
+        }
+
+        .test-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .test-item {
+            padding: 8px 12px;
+            margin: 5px 0;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .test-item.passed {
+            background: rgba(76, 175, 80, 0.1);
+            border-left: 3px solid #4caf50;
+        }
+
+        .test-item.failed {
+            background: rgba(244, 67, 54, 0.1);
+            border-left: 3px solid #f44336;
+        }
+
+        .test-item .name {
+            flex: 1;
+        }
+
+        .test-item .duration {
+            color: #888;
+            font-size: 0.9em;
+        }
+
+        .warning-banner {
+            background: #ff9800;
+            color: #000;
+            padding: 10px 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+
+        .info-banner {
+            background: #2196f3;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding: 20px;
+            color: #888;
+            border-top: 1px solid #444;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧪 XSaved Extension v2</h1>
+            <p>Phase 1 Test Suite - Service Worker & Data Layer Validation</p>
+        </div>
+
+        <div class="warning-banner">
+            ⚠️ <strong>REGRESSION TEST SUITE:</strong> Run this after ANY changes to service worker, API integration, scheduling, or data layer components.
+        </div>
+
+        <div class="info-banner">
+            📋 <strong>Purpose:</strong> Validates core extraction workflow integrity for future version compatibility.
+        </div>
+
+        <!-- Test Controls -->
+        <div class="test-panel">
+            <h2>🎮 Test Controls</h2>
+            <div class="test-controls">
+                <button class="btn" id="runAllTests">
+                    🚀 Run All Tests
+                </button>
+                <button class="btn health" id="runHealthCheck">
+                    🏥 Health Check
+                </button>
+                <button class="btn" id="runServiceWorkerTests">
+                    ⚙️ Service Worker Tests
+                </button>
+                <button class="btn" id="runAPITests">
+                    🔗 API Integration Tests
+                </button>
+                <button class="btn" id="runDataLayerTests">
+                    💾 Data Layer Tests
+                </button>
+                <button class="btn" id="runSchedulingTests">
+                    ⏰ Scheduling Tests
+                </button>
+                <button class="btn clear" id="clearConsole">
+                    🗑️ Clear Console
+                </button>
+            </div>
+        </div>
+
+        <!-- Test Results -->
+        <div class="test-panel">
+            <h2>📊 Test Results</h2>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Tests Run</h3>
+                    <div class="value" id="testsRun">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Passed</h3>
+                    <div class="value" id="testsPassed">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Failed</h3>
+                    <div class="value failed" id="testsFailed">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Success Rate</h3>
+                    <div class="value" id="successRate">0%</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Duration</h3>
+                    <div class="value" id="totalDuration">0ms</div>
+                </div>
+            </div>
+
+            <div class="test-details" id="testDetails" style="display: none;">
+                <h4>📋 Test Details</h4>
+                <div class="test-list" id="testList"></div>
+            </div>
+        </div>
+
+        <!-- Console Output -->
+        <div class="test-panel">
+            <h2>📺 Console Output</h2>
+            <div class="console" id="console"></div>
+        </div>
+
+        <div class="footer">
+            <p>🔧 XSaved Extension v2 - Phase 1 Test Suite</p>
+            <p>For technical support or questions, check the documentation.</p>
+        </div>
+    </div>
+
+    <!-- Load the test suite -->
+    <script src="phase1-service-worker-tests.js"></script>
+    <script>
+        // Console management
+        class TestConsole {
+            constructor() {
+                this.element = document.getElementById('console');
+                this.originalLog = console.log;
+                this.originalError = console.error;
+                this.originalWarn = console.warn;
+                
+                // Override console methods
+                console.log = (...args) => {
+                    this.originalLog(...args);
+                    this.addLine(args.join(' '), 'info');
+                };
+                
+                console.error = (...args) => {
+                    this.originalError(...args);
+                    this.addLine(args.join(' '), 'error');
+                };
+                
+                console.warn = (...args) => {
+                    this.originalWarn(...args);
+                    this.addLine(args.join(' '), 'warning');
+                };
+            }
+            
+            addLine(text, type = 'info') {
+                const line = document.createElement('div');
+                line.className = `console-line ${type}`;
+                
+                const timestamp = new Date().toLocaleTimeString();
+                line.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${this.escapeHtml(text)}`;
+                
+                this.element.appendChild(line);
+                this.element.scrollTop = this.element.scrollHeight;
+            }
+            
+            clear() {
+                this.element.innerHTML = '';
+            }
+            
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+        }
+
+        // Test UI Controller
+        class TestUI {
+            constructor() {
+                this.console = new TestConsole();
+                this.currentTests = 0;
+                this.totalTests = 0;
+                this.results = null;
+                
+                this.setupEventListeners();
+                this.console.addLine('🧪 Phase 1 Test Suite loaded and ready', 'success');
+                this.console.addLine('📋 Available test categories: Service Worker, API Integration, Data Layer, Smart Scheduling', 'info');
+            }
+            
+            setupEventListeners() {
+                document.getElementById('runAllTests').addEventListener('click', () => this.runAllTests());
+                document.getElementById('runHealthCheck').addEventListener('click', () => this.runHealthCheck());
+                document.getElementById('runServiceWorkerTests').addEventListener('click', () => this.runServiceWorkerTests());
+                document.getElementById('runAPITests').addEventListener('click', () => this.runAPITests());
+                document.getElementById('runDataLayerTests').addEventListener('click', () => this.runDataLayerTests());
+                document.getElementById('runSchedulingTests').addEventListener('click', () => this.runSchedulingTests());
+                document.getElementById('clearConsole').addEventListener('click', () => this.clearConsole());
+            }
+            
+            async runAllTests() {
+                this.console.addLine('🚀 Starting comprehensive Phase 1 test suite...', 'test');
+                this.setButtonsEnabled(false);
+                
+                try {
+                    const report = await Phase1Tests.runAllTests();
+                    this.displayResults(report);
+                    this.console.addLine('✅ All tests completed!', 'success');
+                } catch (error) {
+                    this.console.addLine(`❌ Test suite failed: ${error.message}`, 'error');
+                } finally {
+                    this.setButtonsEnabled(true);
+                }
+            }
+            
+            async runHealthCheck() {
+                this.console.addLine('🏥 Running Phase 1 health check...', 'test');
+                this.setButtonsEnabled(false);
+                
+                try {
+                    const result = await Phase1Tests.runHealthCheck();
+                    if (result.healthy) {
+                        this.console.addLine('✅ Health check passed - core systems operational', 'success');
+                    } else {
+                        this.console.addLine(`❌ Health check failed: ${result.error}`, 'error');
+                    }
+                } catch (error) {
+                    this.console.addLine(`❌ Health check error: ${error.message}`, 'error');
+                } finally {
+                    this.setButtonsEnabled(true);
+                }
+            }
+            
+            async runServiceWorkerTests() {
+                this.console.addLine('⚙️ Running Service Worker tests...', 'test');
+                this.setButtonsEnabled(false);
+                
+                try {
+                    await Phase1Tests.ServiceWorkerTests.testServiceWorkerInitialization();
+                    await Phase1Tests.ServiceWorkerTests.testStateManagement();
+                    await Phase1Tests.ServiceWorkerTests.testStatsRetrieval();
+                    this.console.addLine('✅ Service Worker tests completed', 'success');
+                } catch (error) {
+                    this.console.addLine(`❌ Service Worker tests failed: ${error.message}`, 'error');
+                } finally {
+                    this.setButtonsEnabled(true);
+                }
+            }
+            
+            async runAPITests() {
+                this.console.addLine('🔗 Running API Integration tests...', 'test');
+                this.setButtonsEnabled(false);
+                
+                try {
+                    await Phase1Tests.APIIntegrationTests.testCSRFTokenRetrieval();
+                    await Phase1Tests.APIIntegrationTests.testLoginStatusCheck();
+                    this.console.addLine('✅ API Integration tests completed', 'success');
+                } catch (error) {
+                    this.console.addLine(`❌ API Integration tests failed: ${error.message}`, 'error');
+                } finally {
+                    this.setButtonsEnabled(true);
+                }
+            }
+            
+            async runDataLayerTests() {
+                this.console.addLine('💾 Running Data Layer tests...', 'test');
+                this.setButtonsEnabled(false);
+                
+                try {
+                    await Phase1Tests.DataLayerTests.testLocalStorageOperations();
+                    await Phase1Tests.DataLayerTests.testBatchStoragePerformance();
+                    this.console.addLine('✅ Data Layer tests completed', 'success');
+                } catch (error) {
+                    this.console.addLine(`❌ Data Layer tests failed: ${error.message}`, 'error');
+                } finally {
+                    this.setButtonsEnabled(true);
+                }
+            }
+            
+            async runSchedulingTests() {
+                this.console.addLine('⏰ Running Smart Scheduling tests...', 'test');
+                this.setButtonsEnabled(false);
+                
+                try {
+                    await Phase1Tests.SmartSchedulingTests.testScheduleIntervalCalculation();
+                    this.console.addLine('✅ Smart Scheduling tests completed', 'success');
+                } catch (error) {
+                    this.console.addLine(`❌ Smart Scheduling tests failed: ${error.message}`, 'error');
+                } finally {
+                    this.setButtonsEnabled(true);
+                }
+            }
+            
+            clearConsole() {
+                this.console.clear();
+                this.console.addLine('🧹 Console cleared', 'info');
+            }
+            
+            setButtonsEnabled(enabled) {
+                const buttons = document.querySelectorAll('.btn');
+                buttons.forEach(btn => btn.disabled = !enabled);
+            }
+            
+            displayResults(report) {
+                this.results = report;
+                
+                // Update stats
+                document.getElementById('testsRun').textContent = report.summary.total;
+                document.getElementById('testsPassed').textContent = report.summary.passed;
+                document.getElementById('testsFailed').textContent = report.summary.failed;
+                document.getElementById('successRate').textContent = `${report.summary.successRate}%`;
+                document.getElementById('totalDuration').textContent = `${report.summary.totalDuration}ms`;
+                
+                // Update progress bar
+                const progressFill = document.getElementById('progressFill');
+                progressFill.style.width = `${report.summary.successRate}%`;
+                
+                // Show test details
+                const detailsElement = document.getElementById('testDetails');
+                const testList = document.getElementById('testList');
+                
+                testList.innerHTML = '';
+                report.tests.forEach(test => {
+                    const testItem = document.createElement('div');
+                    testItem.className = `test-item ${test.status.toLowerCase()}`;
+                    testItem.innerHTML = `
+                        <span class="name">${test.name}</span>
+                        <span class="duration">${test.duration}ms</span>
+                    `;
+                    testList.appendChild(testItem);
+                });
+                
+                detailsElement.style.display = 'block';
+            }
+        }
+
+        // Initialize the test UI
+        window.addEventListener('DOMContentLoaded', () => {
+            window.testUI = new TestUI();
+        });
+    </script>
+</body>
+</html> 

@@ -264,12 +264,12 @@ export class SearchExecutor {
   private async searchByAuthor(author: string): Promise<BookmarkEntity[]> {
     // Use the database's indexed search (we need to add this method to database.ts)
     return new Promise((resolve, reject) => {
-      if (!db.db) {
+      if (!db.database) {
         reject(new Error('Database not initialized'));
         return;
       }
 
-      const transaction = db.db.transaction([STORES.BOOKMARKS], 'readonly');
+      const transaction = db.database.transaction([STORES.BOOKMARKS], 'readonly');
       const store = transaction.objectStore(STORES.BOOKMARKS);
       const index = store.index('author');
       
@@ -290,12 +290,12 @@ export class SearchExecutor {
    */
   private async searchByDateRange(dateRange: { start: string; end: string }): Promise<BookmarkEntity[]> {
     return new Promise((resolve, reject) => {
-      if (!db.db) {
+      if (!db.database) {
         reject(new Error('Database not initialized'));
         return;
       }
 
-      const transaction = db.db.transaction([STORES.BOOKMARKS], 'readonly');
+      const transaction = db.database.transaction([STORES.BOOKMARKS], 'readonly');
       const store = transaction.objectStore(STORES.BOOKMARKS);
       const index = store.index('bookmark_timestamp');
       
@@ -317,12 +317,12 @@ export class SearchExecutor {
    */
   private async searchByTextToken(token: string): Promise<BookmarkEntity[]> {
     return new Promise((resolve, reject) => {
-      if (!db.db) {
+      if (!db.database) {
         reject(new Error('Database not initialized'));
         return;
       }
 
-      const transaction = db.db.transaction([STORES.BOOKMARKS], 'readonly');
+      const transaction = db.database.transaction([STORES.BOOKMARKS], 'readonly');
       const store = transaction.objectStore(STORES.BOOKMARKS);
       const index = store.index('text_search');
       

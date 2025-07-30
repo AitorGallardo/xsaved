@@ -28,6 +28,13 @@ export class XSavedDatabase {
   private initPromise: Promise<void> | null = null;
 
   /**
+   * Get database instance (for advanced operations)
+   */
+  get database(): IDBDatabase | null {
+    return this.db;
+  }
+
+  /**
    * Initialize database connection with schema setup
    */
   async initialize(): Promise<DatabaseResult<void>> {
