@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "XSaved v2",
+  "version": "2.0.0",
+  "description": "Local-first Twitter bookmark management with lightning-fast search",
+  
+
+
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "scripting",
+    "alarms",
+    "cookies",
+    "tabs"
+  ],
+
+  "host_permissions": [
+    "https://twitter.com/*",
+    "https://x.com/*"
+  ],
+
+  "background": {
+    "type": "module",
+    "service_worker": "service-worker.js"
+  },
+
+  "action": {
+    "default_popup": "src/ui/popup.html",
+    "default_title": "XSaved v2 - Local-First Bookmark Manager"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["https://twitter.com/*", "https://x.com/*"],
+      "js": ["content.js"],
+      "css": ["src/ui/styles.css"]
+    }
+  ],
+
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/*", "src/ui/*"],
+      "matches": ["https://twitter.com/*", "https://x.com/*"]
+    }
+  ]
+} 

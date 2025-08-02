@@ -10,7 +10,9 @@
     "storage",
     "unlimitedStorage",
     "scripting",
-    "alarms"
+    "alarms",
+    "cookies",
+    "tabs"
   ],
 
   "host_permissions": [
@@ -19,8 +21,13 @@
   ],
 
   "background": {
-    "service_worker": "src/extension/service-worker.js",
-    "type": "module"
+    "type": "module",
+    "service_worker": "service-worker.js"
+  },
+
+  "action": {
+    "default_popup": "src/ui/popup.html",
+    "default_title": "XSaved v2 - Local-First Bookmark Manager"
   },
 
   "content_scripts": [

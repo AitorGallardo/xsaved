@@ -6,7 +6,7 @@
 import { DatabaseConfig } from './types';
 
 export const DATABASE_NAME = 'XSavedDB';
-export const DATABASE_VERSION = 1;
+export const DATABASE_VERSION = 2;
 
 // Store names
 export const STORES = {

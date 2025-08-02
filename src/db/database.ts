@@ -62,8 +62,8 @@ export class XSavedDatabase {
 
   private async _performInitialization(): Promise<void> {
     return new Promise((resolve, reject) => {
-      // Check IndexedDB support
-      if (!window.indexedDB) {
+      // Check IndexedDB support (compatible with both browser and service worker)
+      if (!self.indexedDB && !globalThis.indexedDB) {
         reject(new Error(DB_ERRORS.NOT_SUPPORTED));
         return;
       }
@@ -78,6 +78,24 @@ export class XSavedDatabase {
         this.db = (event.target as IDBOpenDBRequest).result;
         this.isInitialized = true;
         
+        console.log('✅ IndexedDB opened successfully');
+        console.log('📊 Database info:', {
+          name: this.db.name,
+          version: this.db.version,
+          objectStoreNames: Array.from(this.db.objectStoreNames)
+        });
+        
+        // Detailed store verification
+        console.log('🔍 Verifying object stores:');
+        Array.from(this.db.objectStoreNames).forEach(storeName => {
+          console.log(`   ✅ Store "${storeName}" exists`);
+        });
+        
+        // Check if stores exist
+        if (!this.db.objectStoreNames.contains(STORES.BOOKMARKS)) {
+          console.warn('⚠️ Bookmarks store missing! Database may need to be recreated.');
+        }
+        
         // Setup error handling
         this.db.onerror = (error) => {
           console.error('Database error:', error);
@@ -87,8 +105,10 @@ export class XSavedDatabase {
       };
 
       request.onupgradeneeded = (event) => {
+        console.log('📦 Setting up database schema...');
         const db = (event.target as IDBOpenDBRequest).result;
         this._createSchema(db);
+        console.log('✅ Database schema created successfully');
       };
     });
   }
@@ -142,7 +162,15 @@ export class XSavedDatabase {
     const transaction = this.db.transaction(storeNames, mode);
     
     transaction.onerror = (event) => {
-      console.error('Transaction error:', event);
+      console.error('❌ Transaction error:', event);
+      console.error('❌ Transaction details:', {
+        mode,
+        storeNames,
+        error: transaction.error,
+        db: this.db?.name,
+        dbVersion: this.db?.version,
+        objectStoreNames: this.db ? Array.from(this.db.objectStoreNames) : 'N/A'
+      });
     };
 
     return transaction;
@@ -229,8 +257,15 @@ export class XSavedDatabase {
         resolve(bookmarkToAdd);
       };
 
-      request.onerror = () => {
-        reject(new Error('Failed to add bookmark to store'));
+      request.onerror = (event) => {
+        console.error('❌ IndexedDB add request error:', event);
+        console.error('❌ Request error details:', {
+          error: request.error,
+          transaction: transaction.error,
+          objectStore: store.name,
+          bookmark: bookmarkToAdd
+        });
+        reject(new Error(`Failed to add bookmark to store: ${request.error?.message || 'Unknown error'}`));
       };
     });
   }
@@ -432,6 +467,116 @@ export class XSavedDatabase {
   }
 
   /**
+   * Get all bookmarks with optional filtering and sorting
+   */
+  async getAllBookmarks(options: {
+    limit?: number;
+    sortBy?: 'created_at' | 'bookmark_timestamp';
+    sortOrder?: 'asc' | 'desc';
+  } = {}): Promise<DatabaseResult<BookmarkEntity[]>> {
+    await this._ensureInitialized();
+
+    try {
+      const { result, metrics } = await this._withPerformanceTracking(
+        'getAllBookmarks',
+        () => this._getAllBookmarksInternal(options)
+      );
+
+      return { 
+        success: true, 
+        data: result,
+        metrics 
+      };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to get all bookmarks'
+      };
+    }
+  }
+
+  private async _getAllBookmarksInternal(options: {
+    limit?: number;
+    sortBy?: 'created_at' | 'bookmark_timestamp';
+    sortOrder?: 'asc' | 'desc';
+  }): Promise<BookmarkEntity[]> {
+    return new Promise((resolve, reject) => {
+      const transaction = this._createTransaction(STORES.BOOKMARKS, 'readonly');
+      const store = transaction.objectStore(STORES.BOOKMARKS);
+      
+      const sortBy = options.sortBy || 'created_at';
+      const direction = options.sortOrder === 'asc' ? 'next' : 'prev';
+      
+      let request: IDBRequest;
+      if (store.indexNames.contains(sortBy)) {
+        const index = store.index(sortBy);
+        request = index.openCursor(null, direction);
+      } else {
+        request = store.openCursor(null, direction);
+      }
+
+      const results: BookmarkEntity[] = [];
+      const limit = options.limit || 1000;
+
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest).result;
+        if (cursor && results.length < limit) {
+          results.push(cursor.value);
+          cursor.continue();
+        } else {
+          resolve(results);
+        }
+      };
+
+      request.onerror = () => {
+        reject(new Error('Failed to get all bookmarks'));
+      };
+    });
+  }
+
+  /**
+   * Clear all bookmarks from database
+   */
+  async clearAllBookmarks(): Promise<DatabaseResult<void>> {
+    await this._ensureInitialized();
+
+    try {
+      const { result, metrics } = await this._withPerformanceTracking(
+        'clearAllBookmarks',
+        () => this._clearAllBookmarksInternal()
+      );
+
+      return { 
+        success: true, 
+        data: result,
+        metrics 
+      };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to clear all bookmarks'
+      };
+    }
+  }
+
+  private async _clearAllBookmarksInternal(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const transaction = this._createTransaction(STORES.BOOKMARKS, 'readwrite');
+      const store = transaction.objectStore(STORES.BOOKMARKS);
+
+      const request = store.clear();
+
+      request.onsuccess = () => {
+        resolve();
+      };
+
+      request.onerror = () => {
+        reject(new Error('Failed to clear bookmarks store'));
+      };
+    });
+  }
+
+  /**
    * Get database statistics
    */
   async getStats(): Promise<DatabaseResult<any>> {
@@ -472,6 +617,55 @@ export class XSavedDatabase {
         reject(new Error(`Failed to count ${storeName}`));
       };
     });
+  }
+
+  /**
+   * Verify database is working by testing basic operations
+   */
+  async verifyDatabase(): Promise<void> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    console.log('🧪 Testing database functionality...');
+    
+    // Test bookmark creation
+    const testBookmark = {
+      id: 'test_' + Date.now(),
+      text: 'Test bookmark for verification',
+      author: 'test_user',
+      created_at: new Date().toISOString(),
+      bookmark_timestamp: new Date().toISOString(),
+      tags: ['test'],
+      media_urls: [],
+      textTokens: ['test', 'bookmark', 'verification']
+    };
+
+    try {
+      // Add test bookmark
+      const addResult = await this.addBookmark(testBookmark);
+      if (addResult.success) {
+        console.log('✅ Test bookmark added successfully');
+      } else {
+        console.error('❌ Failed to add test bookmark:', addResult.error);
+        return;
+      }
+
+      // Retrieve test bookmark
+      const getResult = await this.getBookmark(testBookmark.id);
+      if (getResult.success && getResult.data) {
+        console.log('✅ Test bookmark retrieved successfully');
+        
+        // Clean up test bookmark
+        await this.deleteBookmark(testBookmark.id);
+        console.log('✅ Test bookmark cleaned up');
+        console.log('🎉 Database verification completed successfully!');
+      } else {
+        console.error('❌ Failed to retrieve test bookmark');
+      }
+    } catch (error) {
+      console.error('❌ Database verification failed:', error);
+    }
   }
 
   /**
