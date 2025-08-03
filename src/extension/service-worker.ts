@@ -260,31 +260,49 @@ const saveBookmarkToLocal = async (bookmark, userTags = []) => {
     
     // Save to IndexedDB (Component 1) - TEMPORARILY USE CHROME.STORAGE FOR TESTING
     if (serviceWorker.db) {
+      console.log('💾 Using IndexedDB for bookmark storage');
       const result = await serviceWorker.db.addBookmark(bookmarkEntity);
       
       if (result.success) {
         console.log(`✅ Saved bookmark ${bookmark.id} to IndexedDB`);
         extractionState.bookmarkCount++;
         broadcastStateUpdate();
-        return result.data;
+        return { success: true, data: result.data };
       } else {
-        console.error('❌ Failed to save bookmark:', result.error);
-        return null;
+        console.error('❌ Failed to save bookmark to IndexedDB:', result.error);
+        return { 
+          success: false, 
+          error: result.error || 'IndexedDB save failed',
+          details: `Database addBookmark operation failed for bookmark ${bookmark.id}`
+        };
       }
     } else {
       // Fallback to chrome.storage.local for testing
-      console.log('💾 Saving bookmark to chrome.storage.local (testing mode)');
-      const key = `bookmark_${bookmark.id}`;
-      await chrome.storage.local.set({ [key]: bookmarkEntity });
-      console.log(`✅ Saved bookmark ${bookmark.id} to local storage`);
-      extractionState.bookmarkCount++;
-      broadcastStateUpdate();
-      return bookmarkEntity;
+      console.log('💾 Using chrome.storage.local for bookmark storage (testing mode)');
+      try {
+        const key = `bookmark_${bookmark.id}`;
+        await chrome.storage.local.set({ [key]: bookmarkEntity });
+        console.log(`✅ Saved bookmark ${bookmark.id} to local storage`);
+        extractionState.bookmarkCount++;
+        broadcastStateUpdate();
+        return { success: true, data: bookmarkEntity };
+      } catch (storageError) {
+        console.error('❌ Failed to save bookmark to chrome.storage:', storageError);
+        return { 
+          success: false, 
+          error: storageError.message || 'Chrome storage save failed',
+          details: `Chrome storage operation failed for bookmark ${bookmark.id}: ${storageError.message}`
+        };
+      }
     }
     
   } catch (error) {
     console.error('❌ Error saving bookmark to local storage:', error);
-    return null;
+    return { 
+      success: false, 
+      error: error.message || 'Unknown save error',
+      details: `Unexpected error in saveBookmarkToLocal for bookmark ${bookmark?.id}: ${error.message || error}`
+    };
   }
 };
 
@@ -524,11 +542,27 @@ const handleSearchBookmarks = async (query, sendResponse) => {
 
 const handleSaveBookmark = async (bookmark, sendResponse) => {
   try {
-    const saved = await saveBookmarkToLocal(bookmark, bookmark.tags);
-    sendResponse({ success: !!saved, bookmark: saved });
+    console.log('📝 Attempting to save bookmark:', { id: bookmark.id, text: bookmark.text?.substring(0, 50) });
+    const result = await saveBookmarkToLocal(bookmark, bookmark.tags);
+    
+    if (result.success) {
+      console.log('✅ Bookmark saved successfully:', result.data?.id);
+      sendResponse({ success: true, bookmark: result.data });
+    } else {
+      console.error('❌ Bookmark save failed:', result.error);
+      sendResponse({ 
+        success: false, 
+        error: result.error || 'Unknown database error',
+        details: result.details || 'Database operation failed without details'
+      });
+    }
   } catch (error) {
-    console.error('Save bookmark error:', error);
-    sendResponse({ success: false, error: error.message });
+    console.error('❌ Save bookmark error:', error);
+    sendResponse({ 
+      success: false, 
+      error: error.message || 'Unknown error',
+      details: error.stack || 'No error stack available'
+    });
   }
 };
 

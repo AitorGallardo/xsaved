@@ -1008,8 +1008,8 @@ class XSavedContentScript {
     // Must have correct data-testid
     const hasValidTestId = dataTestId === 'bookmark' || dataTestId === 'removeBookmark';
     
-    // Must have correct aria-label
-    const hasValidAriaLabel = ariaLabel === 'Bookmark' || ariaLabel === 'Bookmarked';
+    // Must have correct aria-label. Using third check cause in status page aria-label look like this : 102 Bookmarks. Bookmarked
+    const hasValidAriaLabel = ariaLabel === 'Bookmark' || ariaLabel === 'Bookmarked' || ariaLabel.toLowerCase().includes('bookmark');
     
     // Must NOT be a share button
     const isNotShareButton = !ariaLabel.toLowerCase().includes('share');
@@ -1282,7 +1282,11 @@ class XSavedContentScript {
         margin-left: 2px;
       `;
       
-      removeButton.addEventListener('click', () => {
+      removeButton.addEventListener('click', (e) => {
+        // Prevent event from bubbling up and closing the dialog
+        e.preventDefault();
+        e.stopPropagation();
+        
         // Clear auto-fade timeout when user is actively interacting
         this.clearTooltipTimeout();
         
@@ -1290,6 +1294,7 @@ class XSavedContentScript {
         if (index > -1) {
           currentTags.splice(index, 1);
           tagElement.remove();
+          console.log(`🏷️ Removed tag: "${tagText}"`);
         }
       });
       
@@ -1348,6 +1353,12 @@ class XSavedContentScript {
           lastTagElement.remove();
         }
       }
+    });
+
+    // Also handle paste events
+    tagsInput.addEventListener('paste', (e) => {
+      console.log('📋 User pasted text, clearing auto-fade timeout');
+      this.clearTooltipTimeout();
     });
 
     // Input focus effects
@@ -1447,12 +1458,7 @@ class XSavedContentScript {
       this.handleSaveBookmark(tweetData, currentTags, saveButton);
     });
 
-    // Enter key to save (only if no text in input, otherwise it creates a tag)
-    tagsInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter' && !tagsInput.value.trim()) {
-        this.handleSaveBookmark(tweetData, currentTags, saveButton);
-      }
-    });
+    // Note: Enter key handling is now done at dialog level to avoid conflicts
 
     actionsContainer.appendChild(cancelButton);
     actionsContainer.appendChild(saveButton);
@@ -1462,6 +1468,17 @@ class XSavedContentScript {
     dialog.appendChild(preview);
     dialog.appendChild(tagsSection);
     dialog.appendChild(actionsContainer);
+
+    // Add hover behavior to control auto-fade
+    dialog.addEventListener('mouseenter', () => {
+      console.log('🖱️ Mouse entered dialog, stopping auto-fade');
+      this.clearTooltipTimeout();
+    });
+
+    dialog.addEventListener('mouseleave', () => {
+      console.log('🖱️ Mouse left dialog, restarting auto-fade');
+      this.resetTooltipTimeout();
+    });
 
     // Add outside click dismissal
     setTimeout(() => {
@@ -1480,17 +1497,32 @@ class XSavedContentScript {
       dialog._outsideClickHandler = handleOutsideClick;
     }, 100);
 
-    // Add escape key dismissal
-    const handleEscapeKey = (e) => {
+    // Add escape key dismissal and enter key save
+    const handleDialogKeys = (e) => {
       if (e.key === 'Escape') {
         console.log('⌨️ Escape key pressed, closing dialog');
         this.removeTooltip();
-        document.removeEventListener('keydown', handleEscapeKey);
+        document.removeEventListener('keydown', handleDialogKeys);
+      } else if (e.key === 'Enter') {
+        // Only save on Enter if input is not focused (to avoid interference with tag creation)
+        const activeElement = document.activeElement;
+        const isInputFocused = activeElement && activeElement.classList.contains('xsaved-tag-input');
+        
+        if (!isInputFocused) {
+          console.log('⌨️ Enter key pressed, saving bookmark');
+          // Add any remaining text in the input as a tag before saving
+          const remainingText = tagsInput.value.trim();
+          if (remainingText) {
+            addTag(remainingText);
+            tagsInput.value = '';
+          }
+          this.handleSaveBookmark(tweetData, currentTags, saveButton);
+        }
       }
     };
     
-    document.addEventListener('keydown', handleEscapeKey);
-    dialog._escapeKeyHandler = handleEscapeKey;
+    document.addEventListener('keydown', handleDialogKeys);
+    dialog._keyHandler = handleDialogKeys;
 
     return dialog;
   }
@@ -1532,11 +1564,59 @@ class XSavedContentScript {
         }, 1500);
         
       } else {
-        console.error('❌ Failed to save bookmark:', response?.error);
+        // Enhanced error handling with detailed logging
+        let errorMessage = 'Unknown error';
+        let detailedError = 'No response received';
         
-        // Show error state
+        if (response === null) {
+          errorMessage = 'Extension unavailable';
+          detailedError = 'Extension context lost (try reloading page)';
+        } else if (response === undefined) {
+          errorMessage = 'No response';
+          detailedError = 'Service worker did not respond';
+        } else if (response.error) {
+          errorMessage = 'Save failed';
+          detailedError = response.error;
+        } else if (response.success === false) {
+          errorMessage = 'Service worker error';
+          detailedError = response.error || response.details || response.message || 'Service worker returned success:false without error details';
+        } else {
+          errorMessage = 'Save failed';
+          detailedError = `Unexpected response: ${JSON.stringify(response)}`;
+        }
+        
+        console.error('❌ Failed to save bookmark:');
+        console.error('  Error message:', errorMessage);
+        console.error('  Detailed error:', detailedError);
+        console.error('  Full response:', response);
+        console.error('  Bookmark data:', bookmarkEntity);
+        
+        // Show error state with tooltip for more details
         saveButton.textContent = 'Error!';
         saveButton.style.background = '#f91880';
+        saveButton.title = `${errorMessage}: ${detailedError}`;
+        
+        // Add error details as a temporary tooltip
+        const errorTooltip = document.createElement('div');
+        errorTooltip.style.cssText = `
+          position: absolute;
+          bottom: 100%;
+          left: 50%;
+          transform: translateX(-50%);
+          background: #f91880;
+          color: white;
+          padding: 8px 12px;
+          border-radius: 6px;
+          font-size: 12px;
+          white-space: nowrap;
+          margin-bottom: 8px;
+          z-index: 10001;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        `;
+        errorTooltip.textContent = detailedError;
+        
+        saveButton.style.position = 'relative';
+        saveButton.appendChild(errorTooltip);
         
         // Reset after delay
         setTimeout(() => {
@@ -1544,7 +1624,13 @@ class XSavedContentScript {
           saveButton.style.background = '#1DA1F2';
           saveButton.disabled = false;
           saveButton.style.opacity = '1';
-        }, 2000);
+          saveButton.title = '';
+          
+          // Remove error tooltip
+          if (errorTooltip.parentNode) {
+            errorTooltip.remove();
+          }
+        }, 4000); // Longer delay to read error message
       }
     });
   }
@@ -1581,8 +1667,8 @@ class XSavedContentScript {
       if (currentTooltip._outsideClickHandler) {
         document.removeEventListener('click', currentTooltip._outsideClickHandler);
       }
-      if (currentTooltip._escapeKeyHandler) {
-        document.removeEventListener('keydown', currentTooltip._escapeKeyHandler);
+      if (currentTooltip._keyHandler) {
+        document.removeEventListener('keydown', currentTooltip._keyHandler);
       }
       
       // Fade out animation
