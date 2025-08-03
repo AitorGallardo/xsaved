@@ -14,7 +14,7 @@ console.log('🚀 XSaved v2 Enhanced Content Script loaded:', window.location.hr
 // ===== CONFIGURATION =====
 const XSAVED_CONFIG = {
   selectors: {
-    bookmarkButton: '[data-testid="bookmark"], [aria-label*="ookmark"]',
+    bookmarkButton: '[data-testid="bookmark"], [data-testid="removeBookmark"]',
     // Target the exact h2 element from the Twitter bookmarks page
     bookmarksPageHeader: 'h2[dir="ltr"][aria-level="2"][role="heading"]',
     // Fallback: target the container if the specific h2 isn't found
@@ -29,7 +29,7 @@ const XSAVED_CONFIG = {
     isBookmarksPage: () => window.location.pathname.includes('/i/bookmarks')
   },
   ui: {
-    fadeTimeout: 8000,
+    fadeTimeout: 2000,  // 2 seconds auto-fade as requested
     animationDuration: 300
   }
 };
@@ -818,8 +818,25 @@ class XSavedContentScript {
     console.log(`🔍 Found ${bookmarkButtons.length} bookmark buttons`);
 
     bookmarkButtons.forEach((button, index) => {
+      // Debug button details
+      const ariaLabel = button.getAttribute('aria-label') || '';
+      const dataTestId = button.getAttribute('data-testid') || '';
+      console.log(`🔍 Button ${index + 1}:`, {
+        ariaLabel,
+        dataTestId,
+        isAlreadyIntercepted: interceptedButtons.has(button),
+        hasXSavedClass: button.classList.contains('xsaved-intercepted')
+      });
+
       // Skip if already intercepted
       if (interceptedButtons.has(button)) {
+        console.log(`⏭️ Button ${index + 1} already intercepted, skipping`);
+        return;
+      }
+
+      // Validate this is actually a bookmark button
+      if (!this.isValidBookmarkButton(button)) {
+        console.warn(`❌ Button ${index + 1} failed validation, skipping`);
         return;
       }
 
@@ -839,6 +856,11 @@ class XSavedContentScript {
       // Add our click handler
       button.addEventListener('click', (e) => {
         console.log('🖱️ Bookmark button clicked!');
+        console.log('🔍 Button that was clicked:', {
+          ariaLabel: button.getAttribute('aria-label'),
+          dataTestId: button.getAttribute('data-testid'),
+          buttonElement: button
+        });
         
         const isBookmarking = this.checkIfBookmarkAction(button);
         console.log('Is bookmarking action:', isBookmarking);
@@ -864,6 +886,8 @@ class XSavedContentScript {
             };
             this.showSaveDialog(syntheticEvent, tweetData, button);
           }, 200);
+        } else {
+          console.log('🔄 This is an unbookmark action, no dialog needed');
         }
       }, false);
     });
@@ -976,18 +1000,53 @@ class XSavedContentScript {
     return media_urls;
   }
 
+  isValidBookmarkButton(button) {
+    const ariaLabel = button.getAttribute('aria-label') || '';
+    const dataTestId = button.getAttribute('data-testid') || '';
+    
+    // Must have correct data-testid
+    const hasValidTestId = dataTestId === 'bookmark' || dataTestId === 'removeBookmark';
+    
+    // Must have correct aria-label. Using third check cause in status page aria-label look like this : 102 Bookmarks. Bookmarked
+    const hasValidAriaLabel = ariaLabel === 'Bookmark' || ariaLabel === 'Bookmarked' || ariaLabel.toLowerCase().includes('bookmark');
+    
+    // Must NOT be a share button
+    const isNotShareButton = !ariaLabel.toLowerCase().includes('share');
+    
+    // Must have bookmark icon (SVG with bookmark path)
+    const svg = button.querySelector('svg');
+    const hasBookmarkIcon = svg && svg.querySelector('path[d*="4.5C4 3.12"]'); // Part of bookmark icon path
+    
+    const isValid = hasValidTestId && hasValidAriaLabel && isNotShareButton && hasBookmarkIcon;
+    
+    console.log('🔍 Button validation:', {
+      ariaLabel,
+      dataTestId,
+      hasValidTestId,
+      hasValidAriaLabel,
+      isNotShareButton,
+      hasBookmarkIcon,
+      isValid
+    });
+    
+    return isValid;
+  }
+
   checkIfBookmarkAction(button) {
     const ariaLabel = button.getAttribute('aria-label') || '';
+    const dataTestId = button.getAttribute('data-testid') || '';
     
-    // "Bookmark" = not bookmarked yet, "Bookmarked" = already bookmarked
-    const isBookmarkedByLabel = ariaLabel.toLowerCase().includes('bookmarked');
+    // More precise detection based on data-testid
+    const isCurrentlyBookmarked = dataTestId === 'removeBookmark' || ariaLabel === 'Bookmarked';
+    const willBookmark = !isCurrentlyBookmarked;
     
     console.log('🔍 Checking bookmark action state:');
     console.log('  aria-label:', ariaLabel);
-    console.log('  is currently bookmarked:', isBookmarkedByLabel);
+    console.log('  data-testid:', dataTestId);
+    console.log('  is currently bookmarked:', isCurrentlyBookmarked);
+    console.log('  → Will bookmark:', willBookmark);
     
-    // Return true if we're about to bookmark (not already bookmarked)
-    return !isBookmarkedByLabel;
+    return willBookmark;
   }
 
   // ===== SAVE DIALOG =====
@@ -1016,13 +1075,26 @@ class XSavedContentScript {
     
     console.log('✅ Save dialog added to DOM');
     
-    // Focus the input
+    // Focus the input after animation completes
     const input = dialog.querySelector('.xsaved-tag-input');
     if (input) {
       setTimeout(() => {
-        input.focus();
-        console.log('🎯 Input focused');
-      }, 100);
+        try {
+          input.focus();
+          console.log('🎯 Input focused successfully');
+        } catch (error) {
+          console.warn('⚠️ Failed to focus input:', error);
+          // Retry focus
+          setTimeout(() => {
+            try {
+              input.focus();
+              console.log('🎯 Input focused on retry');
+            } catch (retryError) {
+              console.error('❌ Focus retry failed:', retryError);
+            }
+          }, 200);
+        }
+      }, 350); // Wait for fade-in animation to complete
     }
     
     // Set auto-fade timeout
@@ -1086,7 +1158,12 @@ class XSavedContentScript {
       padding: 0;
       line-height: 1;
     `;
-    closeButton.addEventListener('click', () => this.removeTooltip());
+    closeButton.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log('❌ Close button clicked');
+      this.removeTooltip();
+    });
 
     header.appendChild(headerLeft);
     header.appendChild(closeButton);
@@ -1205,6 +1282,9 @@ class XSavedContentScript {
       `;
       
       removeButton.addEventListener('click', () => {
+        // Clear auto-fade timeout when user is actively interacting
+        this.clearTooltipTimeout();
+        
         const index = currentTags.indexOf(tagText);
         if (index > -1) {
           currentTags.splice(index, 1);
@@ -1229,6 +1309,9 @@ class XSavedContentScript {
 
     // Input event handlers for tag creation
     tagsInput.addEventListener('input', (e) => {
+      // Clear auto-fade timeout when user is actively typing
+      this.clearTooltipTimeout();
+      
       const value = e.target.value;
       const lastChar = value.slice(-1);
       
@@ -1243,6 +1326,9 @@ class XSavedContentScript {
     });
 
     tagsInput.addEventListener('keydown', (e) => {
+      // Clear auto-fade timeout when user is actively typing
+      this.clearTooltipTimeout();
+      
       // Create tag on Enter
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -1267,6 +1353,8 @@ class XSavedContentScript {
     tagsInput.addEventListener('focus', () => {
       tagsInput.style.borderColor = '#1DA1F2';
       tagsContainer.style.borderColor = '#1DA1F2';
+      // Only reset timeout on initial focus, not on every interaction
+      this.resetTooltipTimeout();
     });
     tagsInput.addEventListener('blur', () => {
       tagsInput.style.borderColor = 'rgba(255, 255, 255, 0.2)';
@@ -1278,6 +1366,11 @@ class XSavedContentScript {
         addTag(remainingText);
         tagsInput.value = '';
       }
+      
+      // Restart auto-fade timeout when user stops interacting with input
+      setTimeout(() => {
+        this.resetTooltipTimeout();
+      }, 100); // Small delay to avoid conflicts with other interactions
     });
 
     tagsSection.appendChild(tagsLabel);
@@ -1304,7 +1397,12 @@ class XSavedContentScript {
       cursor: pointer;
       transition: all 0.2s ease;
     `;
-    cancelButton.addEventListener('click', () => this.removeTooltip());
+    cancelButton.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log('🚫 Cancel button clicked');
+      this.removeTooltip();
+    });
 
     const saveButton = document.createElement('button');
     saveButton.textContent = 'Save';
@@ -1363,6 +1461,35 @@ class XSavedContentScript {
     dialog.appendChild(preview);
     dialog.appendChild(tagsSection);
     dialog.appendChild(actionsContainer);
+
+    // Add outside click dismissal
+    setTimeout(() => {
+      const handleOutsideClick = (e) => {
+        if (!dialog.contains(e.target)) {
+          console.log('🖱️ Outside click detected, closing dialog');
+          this.removeTooltip();
+          document.removeEventListener('click', handleOutsideClick);
+        }
+      };
+      
+      // Add the listener after a small delay to prevent immediate closure
+      document.addEventListener('click', handleOutsideClick);
+      
+      // Store reference for cleanup
+      dialog._outsideClickHandler = handleOutsideClick;
+    }, 100);
+
+    // Add escape key dismissal
+    const handleEscapeKey = (e) => {
+      if (e.key === 'Escape') {
+        console.log('⌨️ Escape key pressed, closing dialog');
+        this.removeTooltip();
+        document.removeEventListener('keydown', handleEscapeKey);
+      }
+    };
+    
+    document.addEventListener('keydown', handleEscapeKey);
+    dialog._escapeKeyHandler = handleEscapeKey;
 
     return dialog;
   }
@@ -1449,6 +1576,14 @@ class XSavedContentScript {
 
   removeTooltip() {
     if (currentTooltip) {
+      // Clean up event listeners
+      if (currentTooltip._outsideClickHandler) {
+        document.removeEventListener('click', currentTooltip._outsideClickHandler);
+      }
+      if (currentTooltip._escapeKeyHandler) {
+        document.removeEventListener('keydown', currentTooltip._escapeKeyHandler);
+      }
+      
       // Fade out animation
       currentTooltip.style.opacity = '0';
       currentTooltip.style.transform = 'translateY(10px) scale(0.95)';
@@ -1467,12 +1602,23 @@ class XSavedContentScript {
     }
   }
 
+  clearTooltipTimeout() {
+    if (tooltipTimeout) {
+      clearTimeout(tooltipTimeout);
+      tooltipTimeout = null;
+      console.log('⏰ Cleared auto-fade timeout (user is actively typing)');
+    }
+  }
+
   resetTooltipTimeout() {
     if (tooltipTimeout) {
       clearTimeout(tooltipTimeout);
+      console.log('⏰ Cleared existing timeout');
     }
 
+    console.log(`⏰ Setting auto-fade timeout for ${XSAVED_CONFIG.ui.fadeTimeout}ms`);
     tooltipTimeout = setTimeout(() => {
+      console.log('⏰ Auto-fade timeout triggered, closing dialog');
       this.removeTooltip();
     }, XSAVED_CONFIG.ui.fadeTimeout);
   }

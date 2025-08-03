@@ -239,34 +239,52 @@ export class XSavedDatabase {
   }
 
   private async _addBookmarkInternal(bookmark: BookmarkEntity): Promise<BookmarkEntity> {
-    return new Promise((resolve, reject) => {
-      const transaction = this._createTransaction(STORES.BOOKMARKS, 'readwrite');
-      const store = transaction.objectStore(STORES.BOOKMARKS);
+    return new Promise(async (resolve, reject) => {
+      try {
+        // Ensure required fields
+        const bookmarkToAdd: BookmarkEntity = {
+          ...bookmark,
+          bookmark_timestamp: bookmark.bookmark_timestamp || new Date().toISOString(),
+          tags: bookmark.tags || [],
+          textTokens: this._tokenizeText(bookmark.text)
+        };
 
-      // Ensure required fields
-      const bookmarkToAdd: BookmarkEntity = {
-        ...bookmark,
-        bookmark_timestamp: bookmark.bookmark_timestamp || new Date().toISOString(),
-        tags: bookmark.tags || [],
-        textTokens: this._tokenizeText(bookmark.text)
-      };
+        // Create transaction for both bookmarks and tags stores
+        const transaction = this._createTransaction([STORES.BOOKMARKS, STORES.TAGS], 'readwrite');
+        const bookmarksStore = transaction.objectStore(STORES.BOOKMARKS);
+        const tagsStore = transaction.objectStore(STORES.TAGS);
 
-      const request = store.add(bookmarkToAdd);
+        // Save bookmark first
+        const bookmarkRequest = bookmarksStore.add(bookmarkToAdd);
 
-      request.onsuccess = () => {
-        resolve(bookmarkToAdd);
-      };
+        bookmarkRequest.onsuccess = async () => {
+          try {
+            // Update tag analytics after bookmark is saved
+            await this._updateTagAnalytics(bookmarkToAdd.tags, tagsStore);
+            console.log(`✅ Bookmark and tags saved successfully: ${bookmarkToAdd.id}`);
+            resolve(bookmarkToAdd);
+          } catch (tagError) {
+            console.error('❌ Failed to update tag analytics:', tagError);
+            // Don't reject - bookmark was saved successfully
+            resolve(bookmarkToAdd);
+          }
+        };
 
-      request.onerror = (event) => {
-        console.error('❌ IndexedDB add request error:', event);
-        console.error('❌ Request error details:', {
-          error: request.error,
-          transaction: transaction.error,
-          objectStore: store.name,
-          bookmark: bookmarkToAdd
-        });
-        reject(new Error(`Failed to add bookmark to store: ${request.error?.message || 'Unknown error'}`));
-      };
+        bookmarkRequest.onerror = (event) => {
+          console.error('❌ IndexedDB add request error:', event);
+          console.error('❌ Request error details:', {
+            error: bookmarkRequest.error,
+            transaction: transaction.error,
+            objectStore: bookmarksStore.name,
+            bookmark: bookmarkToAdd
+          });
+          reject(new Error(`Failed to add bookmark to store: ${bookmarkRequest.error?.message || 'Unknown error'}`));
+        };
+
+      } catch (error) {
+        console.error('❌ Error in _addBookmarkInternal:', error);
+        reject(error);
+      }
     });
   }
 
@@ -617,6 +635,159 @@ export class XSavedDatabase {
         reject(new Error(`Failed to count ${storeName}`));
       };
     });
+  }
+
+  // ===== TAG MANAGEMENT METHODS =====
+
+  /**
+   * Update tag analytics when bookmarks are saved
+   */
+  private async _updateTagAnalytics(tags: string[], tagsStore: IDBObjectStore): Promise<void> {
+    if (!tags || tags.length === 0) return;
+
+    const timestamp = new Date().toISOString();
+
+    for (const tagName of tags) {
+      if (!tagName.trim()) continue;
+
+      try {
+        // Get existing tag
+        const getRequest = tagsStore.get(tagName);
+        
+        await new Promise<void>((resolve, reject) => {
+          getRequest.onsuccess = () => {
+            const existingTag = getRequest.result;
+            
+            if (existingTag) {
+              // Update existing tag
+              existingTag.usageCount = (existingTag.usageCount || 0) + 1;
+              
+              const updateRequest = tagsStore.put(existingTag);
+              updateRequest.onsuccess = () => {
+                console.log(`📊 Updated tag analytics: ${tagName} (usage: ${existingTag.usageCount})`);
+                resolve();
+              };
+              updateRequest.onerror = () => reject(new Error(`Failed to update tag: ${tagName}`));
+              
+            } else {
+              // Create new tag
+              const newTag = {
+                name: tagName,
+                usageCount: 1,
+                createdAt: timestamp
+              };
+              
+              const addRequest = tagsStore.add(newTag);
+              addRequest.onsuccess = () => {
+                console.log(`🏷️ Created new tag: ${tagName}`);
+                resolve();
+              };
+              addRequest.onerror = () => reject(new Error(`Failed to create tag: ${tagName}`));
+            }
+          };
+          
+          getRequest.onerror = () => reject(new Error(`Failed to get tag: ${tagName}`));
+        });
+        
+      } catch (error) {
+        console.error(`❌ Failed to update tag analytics for: ${tagName}`, error);
+        // Continue with other tags even if one fails
+      }
+    }
+  }
+
+  /**
+   * Get all tags with their usage statistics
+   */
+  async getAllTags(): Promise<DatabaseResult<TagEntity[]>> {
+    await this._ensureInitialized();
+
+    try {
+      const result = await this._withPerformanceTracking('getAllTags', async () => {
+        return new Promise<TagEntity[]>((resolve, reject) => {
+          const transaction = this._createTransaction(STORES.TAGS, 'readonly');
+          const store = transaction.objectStore(STORES.TAGS);
+          const request = store.getAll();
+
+          request.onsuccess = () => {
+            resolve(request.result || []);
+          };
+
+          request.onerror = () => {
+            reject(new Error('Failed to get all tags'));
+          };
+        });
+      });
+
+      return {
+        success: true,
+        data: result.result,
+        metrics: result.metrics
+      };
+
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get tags'
+      };
+    }
+  }
+
+  /**
+   * Get popular tags (sorted by usage count)
+   */
+  async getPopularTags(limit: number = 20): Promise<DatabaseResult<TagEntity[]>> {
+    const allTagsResult = await this.getAllTags();
+    
+    if (!allTagsResult.success) {
+      return allTagsResult;
+    }
+
+    try {
+      const popularTags = allTagsResult.data!
+        .sort((a, b) => (b.usageCount || 0) - (a.usageCount || 0))
+        .slice(0, limit);
+
+      return {
+        success: true,
+        data: popularTags
+      };
+
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get popular tags'
+      };
+    }
+  }
+
+  /**
+   * Search tags by name (for autocomplete)
+   */
+  async searchTags(query: string, limit: number = 10): Promise<DatabaseResult<TagEntity[]>> {
+    const allTagsResult = await this.getAllTags();
+    
+    if (!allTagsResult.success) {
+      return allTagsResult;
+    }
+
+    try {
+      const matchingTags = allTagsResult.data!
+        .filter(tag => tag.name.toLowerCase().includes(query.toLowerCase()))
+        .sort((a, b) => (b.usageCount || 0) - (a.usageCount || 0))
+        .slice(0, limit);
+
+      return {
+        success: true,
+        data: matchingTags
+      };
+
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to search tags'
+      };
+    }
   }
 
   /**
