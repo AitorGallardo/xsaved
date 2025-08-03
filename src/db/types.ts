@@ -84,6 +84,8 @@ export interface IndexConfig {
 export interface QueryOptions {
   limit?: number;
   offset?: number;
+  sortBy?: 'created_at' | 'bookmark_timestamp' | 'author';
+  sortOrder?: 'asc' | 'desc';
   orderBy?: string;
   direction?: 'asc' | 'desc';
 }

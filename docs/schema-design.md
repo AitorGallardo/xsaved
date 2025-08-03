@@ -1,10 +1,12 @@
-# IndexedDB Schema Design
+# Component 1: Database Schema Design (Dexie.js)
 
-## 🎯 Design Goals
+## 🎯 Component 1 Goals (Database Layer)
+- **Dexie.js Migration**: Raw IndexedDB → Dexie.js (65% code reduction)
 - **Eliminate PostgreSQL bloat**: 4.5KB → ~300 bytes per bookmark
-- **Fast search**: Multi-entry indexes for tags and text
+- **Fast search**: Multi-entry indexes for tags and text with automatic optimization
 - **Local-first**: No server dependency for core operations
 - **Scalable**: Handle 50K+ bookmarks with <50ms queries
+- **Developer Experience**: Promise-based API, automatic transaction management
 
 ## 📊 Size Comparison: Old vs New
 

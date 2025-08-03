@@ -1,12 +1,13 @@
-# Extension Infrastructure Design - Component 3
+# Component 3: Extension Infrastructure Design
 
-## 🎯 **Component 3 Goals**
+## 🎯 **Component 3 Goals (Extension Infrastructure)**
 
 - **Chrome Extension Architecture**: Service worker, content scripts, popup interface
-- **Twitter/X Integration**: Seamless bookmark extraction and saving
+- **Twitter/X Integration**: Seamless bookmark extraction and saving via Component 4 (Grid UI)
 - **Communication Layer**: Robust messaging between extension components
-- **Storage Bridge**: Connect extension to IndexedDB and search engine
-- **User Interface**: Popup for quick access and management
+- **Storage Bridge**: Connect extension to Component 1 (Dexie Database) and Component 2 (Search Engine)
+- **User Interface**: Bridge to Component 4 for grid display and tag management
+- **Foundation for Component 5**: Prepare infrastructure for export system
 
 ## 🏗️ **Architecture Overview**
 
