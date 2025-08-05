@@ -551,6 +551,14 @@ class XSavedContentScript {
     leftSide.appendChild(backButton);
     leftSide.appendChild(title);
 
+    // Right side: Search and Export
+    const rightSide = document.createElement('div');
+    rightSide.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    `;
+
     const searchBox = document.createElement('input');
     searchBox.type = 'text';
     searchBox.placeholder = 'Search bookmarks...';
@@ -564,8 +572,45 @@ class XSavedContentScript {
       width: 300px;
     `;
 
+    const exportButton = document.createElement('button');
+    exportButton.innerHTML = `
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 8px;">
+        <path d="M12 2C13.1 2 14 2.9 14 4V12L16.5 9.5C16.9 9.1 17.5 9.1 17.9 9.5C18.3 9.9 18.3 10.5 17.9 10.9L12.7 16.1C12.3 16.5 11.7 16.5 11.3 16.1L6.1 10.9C5.7 10.5 5.7 9.9 6.1 9.5C6.5 9.1 7.1 9.1 7.5 9.5L10 12V4C10 2.9 10.9 2 12 2Z"/>
+        <path d="M20 20H4V18H20V20Z"/>
+      </svg>
+      Export
+    `;
+    exportButton.style.cssText = `
+      display: flex;
+      align-items: center;
+      padding: 8px 16px;
+      background: rgba(34, 197, 94, 0.2);
+      border: 1px solid rgba(34, 197, 94, 0.4);
+      border-radius: 20px;
+      color: #22C55E;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    `;
+
+    exportButton.addEventListener('mouseenter', () => {
+      exportButton.style.background = 'rgba(34, 197, 94, 0.3)';
+    });
+    exportButton.addEventListener('mouseleave', () => {
+      exportButton.style.background = 'rgba(34, 197, 94, 0.2)';
+    });
+
+    exportButton.addEventListener('click', () => {
+      console.log('📤 Export button clicked');
+      this.showExportDialog(bookmarks);
+    });
+
+    rightSide.appendChild(searchBox);
+    rightSide.appendChild(exportButton);
+
     header.appendChild(leftSide);
-    header.appendChild(searchBox);
+    header.appendChild(rightSide);
 
     // Create grid
     const grid = document.createElement('div');
@@ -1707,6 +1752,752 @@ class XSavedContentScript {
       console.log('⏰ Auto-fade timeout triggered, closing dialog');
       this.removeTooltip();
     }, XSAVED_CONFIG.ui.fadeTimeout);
+  }
+
+  // ===== EXPORT FUNCTIONALITY =====
+  showExportDialog(bookmarks) {
+    console.log('📤 Showing export dialog for', bookmarks.length, 'bookmarks');
+    
+    // Create export dialog overlay
+    const dialogOverlay = document.createElement('div');
+    dialogOverlay.id = 'xsaved-export-dialog';
+    dialogOverlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 20000;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    `;
+
+    // Create dialog content
+    const dialogContent = document.createElement('div');
+    dialogContent.style.cssText = `
+      background: #15202b;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 600px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      color: white;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    `;
+
+    // Generate dialog HTML
+    dialogContent.innerHTML = this.generateExportDialogHTML(bookmarks);
+    
+    dialogOverlay.appendChild(dialogContent);
+    document.body.appendChild(dialogOverlay);
+
+    // Setup event listeners
+    this.setupExportDialogEvents(dialogOverlay, bookmarks);
+  }
+
+  generateExportDialogHTML(bookmarks) {
+    const formats = [
+      { format: 'csv', name: 'CSV Export', description: 'Spreadsheet format for data analysis', icon: '📊' },
+      { format: 'pdf', name: 'PDF Report', description: 'Printable reading list with metadata', icon: '📄' },
+      { format: 'json', name: 'JSON API', description: 'Programmatic access to bookmark data', icon: '🔧' }
+    ];
+
+    const formatsHTML = formats.map(format => `
+      <div class="export-format-option" data-format="${format.format}">
+        <div class="format-icon">${format.icon}</div>
+        <div class="format-info">
+          <div class="format-name">${format.name}</div>
+          <div class="format-description">${format.description}</div>
+        </div>
+        <div class="format-radio">
+          <input type="radio" name="export-format" value="${format.format}" ${format.format === 'csv' ? 'checked' : ''}>
+        </div>
+      </div>
+    `).join('');
+
+    return `
+      <div class="export-dialog-header" style="display: flex; justify-content: space-between; align-items: center; padding: 24px 24px 0 24px; border-bottom: 1px solid #38444d; margin-bottom: 20px;">
+        <h2 style="margin: 0; font-size: 24px; font-weight: 700;">📤 Export Bookmarks</h2>
+        <button class="export-dialog-close" aria-label="Close" style="background: none; border: none; font-size: 24px; color: #8899a6; cursor: pointer; padding: 8px; border-radius: 50%;">×</button>
+      </div>
+      
+      <div class="export-dialog-body" style="padding: 0 24px;">
+        <div class="export-summary" style="background: #192734; padding: 16px; border-radius: 8px; margin-bottom: 24px; text-align: center;">
+          <p style="margin: 0; color: #8899a6; font-size: 14px;">Exporting <strong style="color: white;">${bookmarks.length}</strong> bookmarks</p>
+        </div>
+        
+        <div class="export-section" style="margin-bottom: 24px;">
+          <h3 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 600;">📋 Export Format</h3>
+          <div class="export-formats" style="display: flex; flex-direction: column; gap: 12px;">
+            ${formatsHTML}
+          </div>
+        </div>
+        
+        <div class="export-section" style="margin-bottom: 24px;">
+          <h3 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 600;">🔍 Filters (Optional)</h3>
+          <div class="export-filters" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="filter-group">
+              <label for="export-tags" style="font-size: 14px; font-weight: 500; margin-bottom: 8px; display: block;">Tags:</label>
+              <input type="text" id="export-tags" placeholder="javascript, react, typescript" style="padding: 12px; border: 1px solid #38444d; border-radius: 6px; background: #192734; color: white; font-size: 14px; width: 100%;">
+            </div>
+            <div class="filter-group">
+              <label for="export-author" style="font-size: 14px; font-weight: 500; margin-bottom: 8px; display: block;">Author:</label>
+              <input type="text" id="export-author" placeholder="@username" style="padding: 12px; border: 1px solid #38444d; border-radius: 6px; background: #192734; color: white; font-size: 14px; width: 100%;">
+            </div>
+            <div class="filter-group">
+              <label for="export-date-from" style="font-size: 14px; font-weight: 500; margin-bottom: 8px; display: block;">Date From:</label>
+              <input type="date" id="export-date-from" style="padding: 12px; border: 1px solid #38444d; border-radius: 6px; background: #192734; color: white; font-size: 14px; width: 100%;">
+            </div>
+            <div class="filter-group">
+              <label for="export-date-to" style="font-size: 14px; font-weight: 500; margin-bottom: 8px; display: block;">Date To:</label>
+              <input type="date" id="export-date-to" style="padding: 12px; border: 1px solid #38444d; border-radius: 6px; background: #192734; color: white; font-size: 14px; width: 100%;">
+            </div>
+          </div>
+        </div>
+        
+        <div class="export-section" style="margin-bottom: 24px;">
+          <h3 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 600;">📝 Options</h3>
+          <div class="export-options" style="display: flex; flex-direction: column; gap: 12px;">
+            <label class="option-checkbox" style="display: flex; align-items: center; cursor: pointer; padding: 8px 0;">
+              <input type="checkbox" id="export-include-metadata" checked style="width: 18px; height: 18px; margin-right: 12px;">
+              <span style="font-size: 14px;">Include metadata and analytics</span>
+            </label>
+            <label class="option-checkbox" style="display: flex; align-items: center; cursor: pointer; padding: 8px 0;">
+              <input type="checkbox" id="export-custom-filename" style="width: 18px; height: 18px; margin-right: 12px;">
+              <span style="font-size: 14px;">Custom filename</span>
+            </label>
+            <div class="custom-filename-input" style="margin-left: 30px; margin-top: 8px; display: none;">
+              <input type="text" id="export-filename" placeholder="my-bookmarks" style="width: 100%; padding: 12px; border: 1px solid #38444d; border-radius: 6px; background: #192734; color: white; font-size: 14px;">
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="export-dialog-footer" style="display: flex; justify-content: flex-end; gap: 12px; padding: 24px; border-top: 1px solid #38444d; margin-top: 20px;">
+        <button class="export-btn-cancel" style="padding: 12px 24px; border: 1px solid #38444d; background: #192734; color: white; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer;">Cancel</button>
+        <button class="export-btn-export" style="padding: 12px 24px; border: none; background: #22C55E; color: white; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer;">📤 Export</button>
+      </div>
+    `;
+  }
+
+  setupExportDialogEvents(dialogOverlay, bookmarks) {
+    const dialog = dialogOverlay.querySelector('.export-dialog-content') || dialogOverlay;
+
+    // Close button
+    dialog.querySelector('.export-dialog-close')?.addEventListener('click', () => {
+      this.hideExportDialog();
+    });
+
+    // Cancel button
+    dialog.querySelector('.export-btn-cancel')?.addEventListener('click', () => {
+      this.hideExportDialog();
+    });
+
+    // Export button
+    dialog.querySelector('.export-btn-export')?.addEventListener('click', () => {
+      this.handleExport(bookmarks, dialog);
+    });
+
+    // Format selection
+    dialog.querySelectorAll('.export-format-option').forEach(option => {
+      option.addEventListener('click', (e) => {
+        const radio = option.querySelector('input[type="radio"]');
+        if (radio) {
+          radio.checked = true;
+          
+          // Update visual selection
+          dialog.querySelectorAll('.export-format-option').forEach(opt => {
+            opt.style.borderColor = '#38444d';
+            opt.style.background = '#192734';
+          });
+          option.style.borderColor = '#22C55E';
+          option.style.background = '#1a3a4a';
+        }
+      });
+    });
+
+    // Custom filename toggle
+    const customFilenameCheckbox = dialog.querySelector('#export-custom-filename');
+    const customFilenameInput = dialog.querySelector('.custom-filename-input');
+    
+    customFilenameCheckbox?.addEventListener('change', () => {
+      if (customFilenameCheckbox.checked) {
+        customFilenameInput.style.display = 'block';
+      } else {
+        customFilenameInput.style.display = 'none';
+      }
+    });
+
+    // Outside click to close
+    dialogOverlay.addEventListener('click', (e) => {
+      if (e.target === dialogOverlay) {
+        this.hideExportDialog();
+      }
+    });
+
+    // Escape key to close
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        this.hideExportDialog();
+      }
+    });
+  }
+
+  hideExportDialog() {
+    const dialog = document.getElementById('xsaved-export-dialog');
+    if (dialog) {
+      dialog.remove();
+    }
+  }
+
+  async handleExport(bookmarks, dialog) {
+    const exportButton = dialog.querySelector('.export-btn-export');
+    const originalText = exportButton.textContent;
+    
+    try {
+      // Show initial progress
+      this.showExportProgress(dialog, 'Preparing export...', 10);
+      
+      // Disable button and show loading
+      exportButton.disabled = true;
+      exportButton.textContent = '⏳ Exporting...';
+      
+      // Get export options
+      this.showExportProgress(dialog, 'Validating options...', 20);
+      const options = this.getExportOptions(dialog);
+      
+      // Apply filters if specified
+      this.showExportProgress(dialog, 'Applying filters...', 30);
+      let filteredBookmarks = bookmarks;
+      if (options.filters) {
+        filteredBookmarks = this.applyExportFilters(bookmarks, options.filters);
+      }
+      
+      this.showExportProgress(dialog, `Processing ${filteredBookmarks.length} bookmarks...`, 50);
+      
+      // Send export request to service worker with timeout
+      const exportTimeout = setTimeout(() => {
+        console.error('❌ [CS] Export request timed out after 30 seconds');
+        this.showExportError('Export request timed out. Please try again.');
+        exportButton.disabled = false;
+        exportButton.textContent = originalText;
+      }, 30000); // 30 second timeout
+      
+      safeRuntimeMessage({ 
+        action: 'exportBookmarks', 
+        bookmarks: filteredBookmarks,
+        options: options
+      }, (response) => {
+        clearTimeout(exportTimeout); // Clear timeout on response
+        
+        // Safely log response without circular references
+        try {
+          const safeResponse = this.sanitizeObject(response);
+          console.log('📤 [CS] Export response received:', {
+            success: safeResponse?.success,
+            hasData: !!safeResponse?.data,
+            filename: safeResponse?.filename,
+            error: safeResponse?.error,
+            hasDetails: !!safeResponse?.details
+          });
+        } catch (logError) {
+          console.log('📤 [CS] Export response received (logging failed)');
+        }
+        
+        if (response?.success) {
+          this.showExportProgress(dialog, 'Preparing download...', 80);
+          
+          // Download the file
+          this.downloadExportedFile(response.data, response.filename);
+          
+          this.showExportProgress(dialog, 'Download completed!', 100);
+          
+          // Show success message
+          this.showExportSuccess(response);
+          
+          // Close dialog after a delay
+          setTimeout(() => {
+            this.hideExportDialog();
+          }, 2000);
+        } else {
+          // Safely extract error information
+          const errorMessage = this.safeExtractError(response);
+          throw new Error(errorMessage);
+        }
+      });
+      
+    } catch (error) {
+      console.error('Export failed:', error);
+      
+      // Ultra-safe error message extraction
+      let errorMessage = 'Export failed';
+      try {
+        // Try to extract error message safely
+        if (error) {
+          if (typeof error === 'string') {
+            errorMessage = error;
+          } else if (typeof error === 'object' && error !== null) {
+            if (typeof error.message === 'string') {
+              errorMessage = error.message;
+            } else if (typeof error.toString === 'function') {
+              const errorString = error.toString();
+              if (errorString !== '[object Object]') {
+                errorMessage = errorString;
+              }
+            }
+          }
+        }
+      } catch (messageError) {
+        console.error('Error processing error message:', messageError);
+        errorMessage = 'Export failed (error details unavailable)';
+      }
+      
+      // Ensure error message is not too long or problematic
+      if (errorMessage.length > 500) {
+        errorMessage = errorMessage.substring(0, 500) + '...';
+      }
+      
+      // Remove any problematic characters
+      errorMessage = errorMessage.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
+      
+      this.showExportError(errorMessage);
+    } finally {
+      // Restore button
+      exportButton.disabled = false;
+      exportButton.textContent = originalText;
+    }
+  }
+
+  getExportOptions(dialog) {
+    const format = dialog.querySelector('input[name="export-format"]:checked')?.value || 'csv';
+    const includeMetadata = dialog.querySelector('#export-include-metadata')?.checked || false;
+    const customFilename = dialog.querySelector('#export-custom-filename')?.checked || false;
+    const filename = customFilename ? dialog.querySelector('#export-filename')?.value : undefined;
+    
+    const filters = {};
+    
+    // Get filter values
+    const tagsInput = dialog.querySelector('#export-tags');
+    if (tagsInput?.value) {
+      filters.tags = tagsInput.value.split(',').map(tag => tag.trim()).filter(tag => tag);
+    }
+    
+    const authorInput = dialog.querySelector('#export-author');
+    if (authorInput?.value) {
+      filters.author = authorInput.value.trim();
+    }
+    
+    const dateFromInput = dialog.querySelector('#export-date-from');
+    if (dateFromInput?.value) {
+      filters.dateFrom = dateFromInput.value;
+    }
+    
+    const dateToInput = dialog.querySelector('#export-date-to');
+    if (dateToInput?.value) {
+      filters.dateTo = dateToInput.value;
+    }
+    
+    return {
+      format,
+      filters: Object.keys(filters).length > 0 ? filters : undefined,
+      includeMetadata,
+      filename: filename ? `${filename}.${format}` : undefined
+    };
+  }
+
+  applyExportFilters(bookmarks, filters) {
+    return bookmarks.filter(bookmark => {
+      // Tag filter
+      if (filters.tags?.length) {
+        const bookmarkTags = bookmark.tags || [];
+        const hasMatchingTag = filters.tags.some(tag => 
+          bookmarkTags.includes(tag)
+        );
+        if (!hasMatchingTag) return false;
+      }
+      
+      // Author filter
+      if (filters.author) {
+        if (!bookmark.author.toLowerCase().includes(filters.author.toLowerCase())) {
+          return false;
+        }
+      }
+      
+      // Date range filter
+      if (filters.dateFrom || filters.dateTo) {
+        const bookmarkDate = new Date(bookmark.created_at);
+        
+        if (filters.dateFrom) {
+          const fromDate = new Date(filters.dateFrom);
+          if (bookmarkDate < fromDate) return false;
+        }
+        
+        if (filters.dateTo) {
+          const toDate = new Date(filters.dateTo);
+          if (bookmarkDate > toDate) return false;
+        }
+      }
+      
+      return true;
+    });
+  }
+
+  downloadExportedFile(data, filename) {
+    try {
+      console.log('📥 [CS] Starting file download:', filename);
+      
+      // Convert base64 to blob if needed
+      let blob;
+      if (typeof data === 'string') {
+        // Assume it's base64 encoded
+        const byteCharacters = atob(data);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        blob = new Blob([byteArray]);
+      } else {
+        blob = new Blob([data]);
+      }
+      
+      console.log('📥 [CS] Blob created, size:', blob.size, 'bytes');
+      
+      // Use Chrome downloads API for better reliability
+      if (chrome.downloads && chrome.downloads.download) {
+        const url = URL.createObjectURL(blob);
+        chrome.downloads.download({
+          url: url,
+          filename: filename,
+          saveAs: false
+        }, (downloadId) => {
+          if (chrome.runtime.lastError) {
+            console.error('❌ [CS] Chrome download failed:', chrome.runtime.lastError);
+            // Fallback to manual download
+            this.manualDownload(blob, filename);
+          } else {
+            console.log('✅ [CS] Chrome download started, ID:', downloadId);
+            // Clean up the blob URL after a delay
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+          }
+        });
+      } else {
+        // Fallback to manual download
+        this.manualDownload(blob, filename);
+      }
+    } catch (error) {
+      console.error('❌ [CS] Download failed:', error);
+      throw error;
+    }
+  }
+
+  manualDownload(blob, filename) {
+    console.log('📥 [CS] Using manual download fallback');
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // Clean up the blob URL after a delay
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    console.log('✅ [CS] Manual download completed');
+  }
+
+  showExportSuccess(result) {
+    // Create a success notification
+    const successNotification = document.createElement('div');
+    successNotification.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: #15202b;
+      border: 2px solid #22C55E;
+      border-radius: 12px;
+      padding: 20px;
+      z-index: 20001;
+      min-width: 300px;
+      max-width: 400px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      animation: slideInRight 0.3s ease-out;
+    `;
+    
+    // Add CSS animation
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes slideInRight {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+      }
+    `;
+    document.head.appendChild(style);
+    
+    successNotification.innerHTML = `
+      <div style="display: flex; align-items: center; margin-bottom: 12px;">
+        <div style="font-size: 24px; margin-right: 12px;">✅</div>
+        <h3 style="color: white; margin: 0; font-size: 16px;">Export Successful!</h3>
+      </div>
+      <div style="color: #8899a6; font-size: 14px; line-height: 1.4;">
+        <p style="margin: 0 0 8px 0;"><strong>File:</strong> ${result.filename}</p>
+        <p style="margin: 0 0 8px 0;"><strong>Size:</strong> ${this.formatFileSize(result.size || 0)}</p>
+        <p style="margin: 0 0 8px 0;"><strong>Bookmarks:</strong> ${result.metadata?.totalBookmarks || 0}</p>
+        <p style="margin: 0; color: #22C55E; font-size: 12px;">File downloaded to your default downloads folder</p>
+      </div>
+    `;
+    
+    document.body.appendChild(successNotification);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+      if (successNotification.parentNode) {
+        successNotification.style.animation = 'slideInRight 0.3s ease-out reverse';
+        setTimeout(() => {
+          if (successNotification.parentNode) {
+            successNotification.remove();
+          }
+        }, 300);
+      }
+    }, 5000);
+    
+    // Also remove style tag
+    setTimeout(() => {
+      if (style.parentNode) {
+        style.remove();
+      }
+    }, 6000);
+  }
+
+  showExportProgress(dialog, message, percentage) {
+    // Create or update progress indicator
+    let progressContainer = dialog.querySelector('.export-progress');
+    
+    if (!progressContainer) {
+      progressContainer = document.createElement('div');
+      progressContainer.className = 'export-progress';
+      progressContainer.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: #15202b;
+        border: 2px solid #22C55E;
+        border-radius: 12px;
+        padding: 24px;
+        z-index: 20001;
+        min-width: 300px;
+        text-align: center;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      `;
+      
+      const progressBar = document.createElement('div');
+      progressBar.className = 'progress-bar';
+      progressBar.style.cssText = `
+        width: 100%;
+        height: 8px;
+        background: #38444d;
+        border-radius: 4px;
+        margin: 16px 0;
+        overflow: hidden;
+      `;
+      
+      const progressFill = document.createElement('div');
+      progressFill.className = 'progress-fill';
+      progressFill.style.cssText = `
+        height: 100%;
+        background: linear-gradient(90deg, #22C55E, #16A34A);
+        border-radius: 4px;
+        transition: width 0.3s ease;
+        width: 0%;
+      `;
+      
+      progressBar.appendChild(progressFill);
+      progressContainer.appendChild(progressBar);
+      
+      dialog.appendChild(progressContainer);
+    }
+    
+    // Update progress
+    const progressFill = progressContainer.querySelector('.progress-fill');
+    const progressText = progressContainer.querySelector('.progress-text');
+    
+    if (progressFill) {
+      progressFill.style.width = `${percentage}%`;
+    }
+    
+    if (!progressText) {
+      const text = document.createElement('div');
+      text.className = 'progress-text';
+      text.style.cssText = `
+        color: white;
+        font-size: 16px;
+        font-weight: 500;
+        margin-bottom: 8px;
+      `;
+      progressContainer.insertBefore(text, progressContainer.firstChild);
+    }
+    
+    const text = progressContainer.querySelector('.progress-text');
+    if (text) {
+      text.textContent = message;
+    }
+    
+    // Add percentage
+    const percentageText = progressContainer.querySelector('.progress-percentage');
+    if (!percentageText) {
+      const percent = document.createElement('div');
+      percent.className = 'progress-percentage';
+      percent.style.cssText = `
+        color: #22C55E;
+        font-size: 14px;
+        font-weight: 600;
+        margin-top: 8px;
+      `;
+      progressContainer.appendChild(percent);
+    }
+    
+    const percent = progressContainer.querySelector('.progress-percentage');
+    if (percent) {
+      percent.textContent = `${percentage}%`;
+    }
+  }
+
+  hideExportProgress(dialog) {
+    const progressContainer = dialog.querySelector('.export-progress');
+    if (progressContainer) {
+      progressContainer.remove();
+    }
+  }
+
+  showExportError(error) {
+    // Create a more user-friendly error display
+    const errorDialog = document.createElement('div');
+    errorDialog.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #15202b;
+      border: 2px solid #EF4444;
+      border-radius: 12px;
+      padding: 24px;
+      z-index: 20001;
+      min-width: 400px;
+      max-width: 500px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    `;
+    
+    errorDialog.innerHTML = `
+      <div style="text-align: center; margin-bottom: 16px;">
+        <div style="font-size: 48px; margin-bottom: 8px;">❌</div>
+        <h3 style="color: white; margin: 0 0 8px 0; font-size: 18px;">Export Failed</h3>
+        <p style="color: #8899a6; margin: 0; font-size: 14px;">${error}</p>
+      </div>
+      <div style="background: #1a3a4a; padding: 12px; border-radius: 8px; margin: 16px 0;">
+        <p style="color: #22C55E; margin: 0; font-size: 12px; font-weight: 600;">Troubleshooting Tips:</p>
+        <ul style="color: #8899a6; margin: 8px 0 0 0; padding-left: 20px; font-size: 12px;">
+          <li>Try exporting fewer bookmarks</li>
+          <li>Check your internet connection</li>
+          <li>Try a different export format</li>
+          <li>Refresh the page and try again</li>
+        </ul>
+      </div>
+      <div style="text-align: center;">
+        <button class="error-close-btn" style="
+          background: #EF4444;
+          color: white;
+          border: none;
+          padding: 12px 24px;
+          border-radius: 6px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+        ">Close</button>
+      </div>
+    `;
+    
+    document.body.appendChild(errorDialog);
+    
+    // Add close functionality
+    errorDialog.querySelector('.error-close-btn').addEventListener('click', () => {
+      errorDialog.remove();
+    });
+    
+    // Auto-close after 10 seconds
+    setTimeout(() => {
+      if (errorDialog.parentNode) {
+        errorDialog.remove();
+      }
+    }, 10000);
+  }
+
+  formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  // Safe object sanitization to prevent circular references
+  sanitizeObject(obj, maxDepth = 3, currentDepth = 0) {
+    if (currentDepth >= maxDepth) return '[Max Depth Reached]';
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj !== 'object') return obj;
+    
+    try {
+      const seen = new WeakSet();
+      return JSON.parse(JSON.stringify(obj, (key, value) => {
+        if (typeof value === 'object' && value !== null) {
+          if (seen.has(value)) {
+            return '[Circular Reference]';
+          }
+          seen.add(value);
+        }
+        return value;
+      }));
+    } catch (error) {
+      return '[Object could not be sanitized]';
+    }
+  }
+
+  // Safe error extraction to prevent recursion
+  safeExtractError(response) {
+    try {
+      let errorMessage = 'Export failed';
+      
+      // Safely extract error message
+      if (response && typeof response === 'object') {
+        if (typeof response.error === 'string') {
+          errorMessage = response.error;
+        } else if (response.error && typeof response.error.message === 'string') {
+          errorMessage = response.error.message;
+        }
+      }
+      
+      // Safely add details if available
+      if (response && response.details) {
+        try {
+          const details = this.sanitizeObject(response.details, 2);
+          if (details && typeof details === 'object') {
+            const detailsString = JSON.stringify(details, null, 2);
+            errorMessage += `\n\nDetails: ${detailsString}`;
+          }
+        } catch (detailsError) {
+          errorMessage += '\n\nDetails: [Error details could not be displayed]';
+        }
+      }
+      
+      return errorMessage;
+    } catch (extractError) {
+      return 'Export failed (error details unavailable)';
+    }
   }
 
   // ===== NAVIGATION HANDLING =====

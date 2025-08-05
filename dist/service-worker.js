@@ -3141,6 +3141,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         case "getState":
             handleGetState(sendResponse);
             return true;
+        case "exportBookmarks":
+            handleExportBookmarks(request.bookmarks, request.options, sendResponse);
+            return true;
     }
 });
 const handleStartExtraction = async (sendResponse, options = {}) => {
@@ -3285,9 +3288,89 @@ const handleGetStats = async (sendResponse) => {
         sendResponse({ success: false, error: error.message });
     }
 };
+const handleExportBookmarks = async (bookmarks, options, sendResponse) => {
+    try {
+        console.log('📤 Handling export request:', { format: options.format, bookmarkCount: bookmarks.length });
+        // Safely sanitize bookmarks to prevent circular references
+        const sanitizedBookmarks = sanitizeBookmarks(bookmarks);
+        console.log('📤 [SW] Bookmarks sanitized successfully');
+        // Use inline export functionality to avoid any external dependencies
+        console.log('📤 [SW] Using inline export functionality...');
+        const exportManager = new InlineExportManager();
+        console.log('📤 [SW] InlineExportManager instantiated successfully');
+        // Perform export with sanitized bookmarks
+        const result = await exportManager.exportBookmarks(sanitizedBookmarks, options);
+        if (result.success) {
+            // Convert blob to base64 for transmission using chunked approach
+            const blob = result.data;
+            const arrayBuffer = await blob.arrayBuffer();
+            // Use chunked approach for large files to prevent stack overflow
+            const base64 = arrayBufferToBase64(arrayBuffer);
+            sendResponse({
+                success: true,
+                data: base64,
+                filename: result.filename,
+                size: result.size,
+                metadata: result.metadata
+            });
+        }
+        else {
+            sendResponse({
+                success: false,
+                error: result.error || 'Export failed'
+            });
+        }
+    }
+    catch (error) {
+        console.error('Export error:', error);
+        sendResponse({
+            success: false,
+            error: error.message || 'Export failed'
+        });
+    }
+};
 // ===============================
 // UTILITY FUNCTIONS (Keep + enhance)
 // ===============================
+// Safe bookmarks sanitization to prevent circular references
+const sanitizeBookmarks = (bookmarks) => {
+    try {
+        return bookmarks.map(bookmark => ({
+            id: bookmark.id,
+            text: bookmark.text,
+            author: bookmark.author,
+            created_at: bookmark.created_at,
+            bookmark_timestamp: bookmark.bookmark_timestamp,
+            tags: Array.isArray(bookmark.tags) ? bookmark.tags : [],
+            url: bookmark.url,
+            // Only include safe, serializable properties
+            // Exclude any properties that might contain circular references
+        }));
+    }
+    catch (error) {
+        console.error('❌ [SW] Bookmark sanitization failed:', error);
+        // Return empty array as fallback
+        return [];
+    }
+};
+// Safe array buffer to base64 conversion to prevent stack overflow
+const arrayBufferToBase64 = (buffer) => {
+    try {
+        const bytes = new Uint8Array(buffer);
+        const chunkSize = 8192; // Process in 8KB chunks
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+            const chunk = bytes.slice(i, i + chunkSize);
+            binary += String.fromCharCode.apply(null, chunk);
+        }
+        return btoa(binary);
+    }
+    catch (error) {
+        console.error('❌ [SW] Array buffer to base64 conversion failed:', error);
+        // Return empty string as fallback
+        return '';
+    }
+};
 const tokenizeText = (text) => {
     if (!text)
         return [];
@@ -3351,6 +3434,246 @@ chrome.tabs.onActivated.addListener((activeInfo) => {
     });
 });
 console.log('📡 Enhanced Service Worker loaded - ready for initialization');
+// Inline Export Manager - No external dependencies
+class InlineExportManager {
+    constructor() {
+        // No dependencies, no DOM APIs
+    }
+    async exportBookmarks(bookmarks, options) {
+        try {
+            console.log(`📤 [SW] Starting inline export: ${options.format} format for ${bookmarks.length} bookmarks`);
+            const metadata = {
+                totalBookmarks: bookmarks.length,
+                exportDate: new Date().toISOString(),
+                filters: options.filters || {}
+            };
+            let result;
+            switch (options.format) {
+                case 'csv':
+                    result = await this.generateCSV(bookmarks, options);
+                    break;
+                case 'json':
+                    result = await this.generateJSON(bookmarks, options);
+                    break;
+                case 'pdf':
+                    result = await this.generatePDF(bookmarks, options);
+                    break;
+                default:
+                    throw new Error(`Unsupported export format: ${options.format}`);
+            }
+            result.metadata = metadata;
+            result.filename = options.filename || this.generateFilename(options.format, metadata);
+            console.log(`✅ [SW] Inline export completed: ${result.filename} (${bookmarks.length} bookmarks)`);
+            return result;
+        }
+        catch (error) {
+            console.error('❌ [SW] Inline export failed:', error);
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown export error',
+                filename: options.filename || `export-${Date.now()}.${options.format}`
+            };
+        }
+    }
+    async generateCSV(bookmarks, options) {
+        try {
+            console.log(`📊 [SW] Generating CSV for ${bookmarks.length} bookmarks`);
+            const headers = [
+                'id', 'text', 'author', 'created_at', 'bookmark_timestamp',
+                'tags', 'url'
+            ];
+            const rows = bookmarks.map(bookmark => [
+                bookmark.id || '',
+                this.escapeCsvField(bookmark.text || ''),
+                bookmark.author || '',
+                bookmark.created_at || '',
+                bookmark.bookmark_timestamp || '',
+                (bookmark.tags || []).join(', '),
+                bookmark.url || ''
+            ]);
+            const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            return {
+                success: true,
+                data: blob,
+                filename: options.filename || `bookmarks-${Date.now()}.csv`,
+                size: blob.size
+            };
+        }
+        catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'CSV generation failed',
+                filename: options.filename || `bookmarks-${Date.now()}.csv`
+            };
+        }
+    }
+    async generateJSON(bookmarks, options) {
+        try {
+            console.log(`📄 [SW] Generating JSON for ${bookmarks.length} bookmarks`);
+            const data = {
+                metadata: {
+                    totalBookmarks: bookmarks.length,
+                    exportDate: new Date().toISOString(),
+                    format: 'json',
+                    filters: options.filters || {}
+                },
+                bookmarks: bookmarks.map(bookmark => ({
+                    id: bookmark.id,
+                    text: bookmark.text,
+                    author: bookmark.author,
+                    created_at: bookmark.created_at,
+                    bookmark_timestamp: bookmark.bookmark_timestamp,
+                    tags: bookmark.tags || [],
+                    url: bookmark.url
+                }))
+            };
+            // Safely stringify with circular reference protection
+            const jsonContent = this.safeJSONStringify(data);
+            const blob = new Blob([jsonContent], { type: 'application/json' });
+            return {
+                success: true,
+                data: blob,
+                filename: options.filename || `bookmarks-${Date.now()}.json`,
+                size: blob.size
+            };
+        }
+        catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'JSON generation failed',
+                filename: options.filename || `bookmarks-${Date.now()}.json`
+            };
+        }
+    }
+    async generatePDF(bookmarks, options) {
+        try {
+            console.log(`📄 [SW] Generating PDF for ${bookmarks.length} bookmarks`);
+            // Limit bookmarks for PDF to prevent hanging
+            const maxBookmarksForPDF = 500;
+            const limitedBookmarks = bookmarks.slice(0, maxBookmarksForPDF);
+            if (bookmarks.length > maxBookmarksForPDF) {
+                console.warn(`⚠️ [SW] PDF export limited to ${maxBookmarksForPDF} bookmarks (requested: ${bookmarks.length})`);
+            }
+            // Create a simplified HTML content for PDF
+            const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>XSaved Bookmarks Export</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .bookmark { margin-bottom: 20px; padding: 10px; border: 1px solid #ddd; }
+        .author { color: #666; font-size: 14px; }
+        .tags { color: #888; font-size: 12px; }
+        .date { color: #999; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <h1>XSaved Bookmarks Export</h1>
+    <p>Exported on: ${new Date().toLocaleString()}</p>
+    <p>Total bookmarks: ${limitedBookmarks.length}${bookmarks.length > maxBookmarksForPDF ? ` (limited from ${bookmarks.length})` : ''}</p>
+    <hr>
+    ${limitedBookmarks.map(bookmark => `
+        <div class="bookmark">
+            <div class="text">${this.escapeHTML(bookmark.text || '')}</div>
+            <div class="author">By: ${bookmark.author || 'Unknown'}</div>
+            <div class="date">Created: ${bookmark.created_at || 'Unknown'}</div>
+            <div class="tags">Tags: ${(bookmark.tags || []).join(', ') || 'None'}</div>
+        </div>
+    `).join('')}
+</body>
+</html>`;
+            const blob = new Blob([htmlContent], { type: 'text/html' });
+            return {
+                success: true,
+                data: blob,
+                filename: options.filename || `bookmarks-${Date.now()}.html`,
+                size: blob.size,
+                metadata: {
+                    originalCount: bookmarks.length,
+                    exportedCount: limitedBookmarks.length,
+                    limited: bookmarks.length > maxBookmarksForPDF
+                }
+            };
+        }
+        catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'PDF generation failed',
+                filename: options.filename || `bookmarks-${Date.now()}.html`
+            };
+        }
+    }
+    escapeCsvField(field) {
+        if (!field)
+            return '';
+        const cleanField = field.replace(/[\r\n]/g, ' ');
+        if (cleanField.includes(',') || cleanField.includes('"') || cleanField.includes('\n')) {
+            return `"${cleanField.replace(/"/g, '""')}"`;
+        }
+        return cleanField;
+    }
+    escapeHTML(text) {
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+    generateFilename(format, metadata) {
+        const date = new Date().toISOString().split('T')[0];
+        const count = metadata.totalBookmarks;
+        let baseName = `xsaved-bookmarks-${date}-${count}`;
+        if (metadata.filters.tags?.length) {
+            baseName += `-${metadata.filters.tags.join('-')}`;
+        }
+        if (metadata.filters.author) {
+            baseName += `-${metadata.filters.author}`;
+        }
+        return `${baseName}.${format}`;
+    }
+    validateOptions(options) {
+        const errors = [];
+        if (!options.format) {
+            errors.push('Export format is required');
+        }
+        if (!['csv', 'pdf', 'json'].includes(options.format)) {
+            errors.push(`Unsupported format: ${options.format}`);
+        }
+        if (options.filters?.dateFrom && options.filters?.dateTo) {
+            const fromDate = new Date(options.filters.dateFrom);
+            const toDate = new Date(options.filters.dateTo);
+            if (fromDate > toDate) {
+                errors.push('Date range is invalid: from date must be before to date');
+            }
+        }
+        return {
+            valid: errors.length === 0,
+            errors
+        };
+    }
+    // Safe JSON stringify with circular reference protection
+    safeJSONStringify(obj) {
+        try {
+            const seen = new WeakSet();
+            return JSON.stringify(obj, (key, value) => {
+                if (typeof value === 'object' && value !== null) {
+                    if (seen.has(value)) {
+                        return '[Circular Reference]';
+                    }
+                    seen.add(value);
+                }
+                return value;
+            }, 2);
+        }
+        catch (error) {
+            return JSON.stringify({ error: 'Object could not be stringified due to circular references' });
+        }
+    }
+}
 // Export for testing in Service Worker environment
 if (typeof self !== 'undefined') {
     self.testXSaved = {
