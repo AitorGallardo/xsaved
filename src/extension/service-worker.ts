@@ -945,43 +945,16 @@ class InlineExportManager {
         console.warn(`⚠️ [SW] PDF export limited to ${maxBookmarksForPDF} bookmarks (requested: ${bookmarks.length})`);
       }
 
-      // Create a simplified HTML content for PDF
-      const htmlContent = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>XSaved Bookmarks Export</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .bookmark { margin-bottom: 20px; padding: 10px; border: 1px solid #ddd; }
-        .author { color: #666; font-size: 14px; }
-        .tags { color: #888; font-size: 12px; }
-        .date { color: #999; font-size: 12px; }
-    </style>
-</head>
-<body>
-    <h1>XSaved Bookmarks Export</h1>
-    <p>Exported on: ${new Date().toLocaleString()}</p>
-    <p>Total bookmarks: ${limitedBookmarks.length}${bookmarks.length > maxBookmarksForPDF ? ` (limited from ${bookmarks.length})` : ''}</p>
-    <hr>
-    ${limitedBookmarks.map(bookmark => `
-        <div class="bookmark">
-            <div class="text">${this.escapeHTML(bookmark.text || '')}</div>
-            <div class="author">By: ${bookmark.author || 'Unknown'}</div>
-            <div class="date">Created: ${bookmark.created_at || 'Unknown'}</div>
-            <div class="tags">Tags: ${(bookmark.tags || []).join(', ') || 'None'}</div>
-        </div>
-    `).join('')}
-</body>
-</html>`;
+      // Generate PDF content using a simple text-based format
+      // This creates a PDF-like structure that can be opened by PDF viewers
+      const pdfContent = this.generatePDFContent(limitedBookmarks, bookmarks.length > maxBookmarksForPDF);
 
-      const blob = new Blob([htmlContent], { type: 'text/html' });
+      const blob = new Blob([pdfContent], { type: 'application/pdf' });
 
       return {
         success: true,
         data: blob,
-        filename: options.filename || `bookmarks-${Date.now()}.html`,
+        filename: options.filename || `bookmarks-${Date.now()}.pdf`,
         size: blob.size,
         metadata: {
           originalCount: bookmarks.length,
@@ -993,9 +966,104 @@ class InlineExportManager {
       return {
         success: false,
         error: error instanceof Error ? error.message : 'PDF generation failed',
-        filename: options.filename || `bookmarks-${Date.now()}.html`
+        filename: options.filename || `bookmarks-${Date.now()}.pdf`
       };
     }
+  }
+
+  generatePDFContent(bookmarks, wasLimited) {
+    // Create a simple PDF-like structure
+    // This is a basic approach - for production, consider using a PDF library
+    const header = `%PDF-1.4
+1 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+>>
+endobj
+
+2 0 obj
+<<
+/Type /Pages
+/Kids [3 0 R]
+/Count 1
+>>
+endobj
+
+3 0 obj
+<<
+/Type /Page
+/Parent 2 0 R
+/MediaBox [0 0 612 792]
+/Contents 4 0 R
+>>
+endobj
+
+4 0 obj
+<<
+/Length 5 0 R
+>>
+stream
+BT
+/F1 12 Tf
+72 720 Td
+(XSaved Bookmarks Export) Tj
+0 -20 Td
+(Exported on: ${new Date().toLocaleString()}) Tj
+0 -20 Td
+(Total bookmarks: ${bookmarks.length}${wasLimited ? ' (limited)' : ''}) Tj
+0 -40 Td`;
+
+    const content = bookmarks.map((bookmark, index) => {
+      const text = this.escapePDFText(bookmark.text || '');
+      const author = bookmark.author || 'Unknown';
+      const date = bookmark.created_at || 'Unknown';
+      const tags = (bookmark.tags || []).join(', ') || 'None';
+      
+      return `(${index + 1}. ${text}) Tj
+0 -15 Td
+(By: ${author} | Created: ${date} | Tags: ${tags}) Tj
+0 -20 Td`;
+    }).join('\n');
+
+    const contentLength = header.length + content.length;
+    const footer = `
+ET
+endstream
+endobj
+
+5 0 obj
+${contentLength + 100}
+endobj
+
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000204 00000 n 
+0000000${(contentLength + 100).toString().padStart(10, '0')} 00000 n 
+trailer
+<<
+/Size 6
+/Root 1 0 R
+>>
+startxref
+${contentLength + 300}
+%%EOF`;
+
+    return header + content + footer;
+  }
+
+  escapePDFText(text) {
+    // Escape special characters for PDF
+    return text
+      .replace(/\\/g, '\\\\')
+      .replace(/\(/g, '\\(')
+      .replace(/\)/g, '\\)')
+      .replace(/\n/g, ' ')
+      .substring(0, 100); // Limit text length
   }
 
   escapeCsvField(field) {
