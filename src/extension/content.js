@@ -450,6 +450,12 @@ class XSavedContentScript {
       gridOverlay.remove();
     }
 
+    // Remove the fixed header
+    const fixedHeader = document.getElementById('xsaved-fixed-header');
+    if (fixedHeader) {
+      fixedHeader.remove();
+    }
+
     // Restore scrolling on the main page
     document.body.style.overflow = '';
     document.documentElement.style.overflow = '';
@@ -506,80 +512,130 @@ class XSavedContentScript {
   renderBookmarksGrid(container, bookmarks) {
     container.innerHTML = '';
 
-    // Create header
+    // TODO: Grid UI Improvements - Phase 2
+    // - Fixed header positioning issue: moved header outside overlay container
+    // - Removed X button: using only toggle for view switching
+    // - Aligned tag filters with search bar in same row
+    // - Implemented multi-select tag filtering with visual grouping
+    // - Added more sample tags for scroll testing
+
+    // Create fixed header container (outside the overlay container)
+    const headerContainer = document.createElement('div');
+    headerContainer.id = 'xsaved-fixed-header';
+    headerContainer.style.cssText = `
+      position: fixed;
+      top: 50px;
+      left: 0;
+      right: 0;
+      background: rgb(0, 0, 0);
+      z-index: 10001;
+      padding: 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    `;
+
+    // Create header with search, export, and tag filters in one row
     const header = document.createElement('div');
     header.style.cssText = `
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 24px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      gap: 20px;
     `;
 
-    // Left side: Title and back button
-    const leftSide = document.createElement('div');
-    leftSide.style.cssText = `
+    // Left side: Tag filters
+    const tagSelector = document.createElement('div');
+    tagSelector.style.cssText = `
       display: flex;
-      align-items: center;
-      gap: 16px;
+      gap: 12px;
+      overflow-x: auto;
+      flex: 1;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      padding-right: 20px;
     `;
+    tagSelector.style.webkitScrollbar = 'none';
 
-    const backButton = document.createElement('button');
-    backButton.innerHTML = `
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 8px;">
-        <path d="M19 12H5m7-7l-7 7 7 7"/>
-      </svg>
-      Back to Twitter
-    `;
-    backButton.style.cssText = `
-      display: flex;
-      align-items: center;
-      padding: 8px 16px;
-      background: rgba(29, 161, 242, 0.2);
-      border: 1px solid rgba(29, 161, 242, 0.4);
-      border-radius: 20px;
-      color: #1DA1F2;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    `;
+    // Extended sample tags for scroll testing
+    const sampleTags = [
+      'All', 'Tech', 'AI', 'Programming', 'Design', 'Music', 'Gaming', 'News', 
+      'Sports', 'Entertainment', 'Science', 'Business', 'Finance', 'Health', 
+      'Travel', 'Food', 'Fashion', 'Art', 'Education', 'Politics', 'Environment'
+    ];
+    
+    // Track selected tags for multi-select
+    const selectedTags = new Set(['All']);
+    
+    sampleTags.forEach(tag => {
+      const tagButton = document.createElement('button');
+      tagButton.textContent = tag;
+      tagButton.dataset.tag = tag;
+      tagButton.style.cssText = `
+        padding: 8px 16px;
+        background: ${tag === 'All' ? 'rgba(255, 255, 255, 0.9)' : 'rgba(255, 255, 255, 0.1)'};
+        color: ${tag === 'All' ? 'rgb(0, 0, 0)' : 'rgba(255, 255, 255, 0.9)'};
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 20px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        white-space: nowrap;
+        flex-shrink: 0;
+        position: relative;
+      `;
 
-    backButton.addEventListener('mouseenter', () => {
-      backButton.style.background = 'rgba(29, 161, 242, 0.3)';
-    });
-    backButton.addEventListener('mouseleave', () => {
-      backButton.style.background = 'rgba(29, 161, 242, 0.2)';
-    });
+      tagButton.addEventListener('click', () => {
+        if (tag === 'All') {
+          // If "All" is clicked, deselect everything else and select only "All"
+          selectedTags.clear();
+          selectedTags.add('All');
+          tagSelector.querySelectorAll('button').forEach(btn => {
+            btn.style.background = 'rgba(255, 255, 255, 0.1)';
+            btn.style.color = 'rgba(255, 255, 255, 0.9)';
+            btn.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+          });
+          tagButton.style.background = 'rgba(255, 255, 255, 0.9)';
+          tagButton.style.color = 'rgb(0, 0, 0)';
+        } else {
+          // Remove "All" from selection when other tags are selected
+          selectedTags.delete('All');
+          const allButton = tagSelector.querySelector('[data-tag="All"]');
+          if (allButton) {
+            allButton.style.background = 'rgba(255, 255, 255, 0.1)';
+            allButton.style.color = 'rgba(255, 255, 255, 0.9)';
+          }
 
-    backButton.addEventListener('click', () => {
-      console.log('🔙 Back button clicked, switching to default view');
-      isGridModeActive = false;
-      
-      // Update the original toggle state
-      const originalToggle = document.getElementById('xsaved-bookmarks-toggle');
-      if (originalToggle) {
-        const toggleInput = originalToggle.querySelector('input[type="checkbox"]');
-        const toggleSlider = originalToggle.querySelector('span');
-        const toggleDot = toggleSlider ? toggleSlider.querySelector('span') : null;
-        const labelText = originalToggle.querySelector('span');
+          if (selectedTags.has(tag)) {
+            // Deselect tag
+            selectedTags.delete(tag);
+            tagButton.style.background = 'rgba(255, 255, 255, 0.1)';
+            tagButton.style.color = 'rgba(255, 255, 255, 0.9)';
+            tagButton.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+          } else {
+            // Select tag
+            selectedTags.add(tag);
+            tagButton.style.background = 'rgba(29, 161, 242, 0.8)';
+            tagButton.style.color = 'white';
+            tagButton.style.borderColor = 'rgba(29, 161, 242, 1)';
+          }
+
+          // If no tags selected, select "All"
+          if (selectedTags.size === 0) {
+            selectedTags.add('All');
+            const allButton = tagSelector.querySelector('[data-tag="All"]');
+            if (allButton) {
+              allButton.style.background = 'rgba(255, 255, 255, 0.9)';
+              allButton.style.color = 'rgb(0, 0, 0)';
+            }
+          }
+        }
         
-        if (toggleInput) toggleInput.checked = false;
-        if (toggleSlider) toggleSlider.style.backgroundColor = '#ccc';
-        if (toggleDot) toggleDot.style.left = '3px';
-        if (labelText) labelText.textContent = 'Default View';
-      }
-      
-      this.hideGridInterface();
+        console.log(`🏷️ Selected tags:`, Array.from(selectedTags));
+        // TODO: Implement tag filtering functionality
+      });
+
+      tagSelector.appendChild(tagButton);
     });
-
-    const title = document.createElement('h2');
-    title.style.cssText = 'color: white; margin: 0; font-size: 24px;';
-    title.textContent = `XSaved Grid (${bookmarks.length})`;
-
-    leftSide.appendChild(backButton);
-    leftSide.appendChild(title);
 
     // Right side: Search and Export
     const rightSide = document.createElement('div');
@@ -587,6 +643,7 @@ class XSavedContentScript {
       display: flex;
       align-items: center;
       gap: 16px;
+      flex-shrink: 0;
     `;
 
     const searchBox = document.createElement('input');
@@ -639,8 +696,19 @@ class XSavedContentScript {
     rightSide.appendChild(searchBox);
     rightSide.appendChild(exportButton);
 
-    header.appendChild(leftSide);
+    header.appendChild(tagSelector);
     header.appendChild(rightSide);
+    headerContainer.appendChild(header);
+
+    // Add header to document body (outside the overlay container)
+    document.body.appendChild(headerContainer);
+
+    // Create content container with top margin to account for fixed header
+    const contentContainer = document.createElement('div');
+    contentContainer.style.cssText = `
+      margin-top: 100px;
+      padding: 0 20px;
+    `;
 
     // Create grid
     const grid = document.createElement('div');
@@ -657,8 +725,8 @@ class XSavedContentScript {
       grid.appendChild(card);
     });
 
-    container.appendChild(header);
-    container.appendChild(grid);
+    container.appendChild(contentContainer);
+    contentContainer.appendChild(grid);
 
     // Add search functionality
     searchBox.addEventListener('input', (e) => {
