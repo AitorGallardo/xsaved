@@ -386,12 +386,17 @@ class XSavedContentScript {
   showGridInterface() {
     console.log('🏗️ Showing XSaved grid interface...');
     
+    // TODO: Overlay UI Improvements
+    // - Changed inset to 50px 0px 0px 0px to partially cover X.com bookmarks page
+    // - Disabled main page scrolling to prevent interference with overlay
+    // - Hidden X.com search input when overlay is active
+    
     // Create grid overlay
     const gridOverlay = document.createElement('div');
     gridOverlay.id = 'xsaved-grid-overlay';
     gridOverlay.style.cssText = `
       position: fixed;
-      top: 0;
+      top: 50px;
       left: 0;
       right: 0;
       bottom: 0;
@@ -400,6 +405,20 @@ class XSavedContentScript {
       padding: 20px;
       overflow-y: auto;
     `;
+
+    // Disable scrolling on the main page
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+
+    // Hide X.com search input
+    const searchInput = document.querySelector('input[data-testid="SearchBox_Search_Input"]');
+    if (searchInput) {
+      const searchContainer = searchInput.closest('div.css-175oi2r.r-1awozwy.r-aqfbo4.r-kemksi.r-18u37iz.r-1h3ijdo.r-6gpygo.r-15ysp7h.r-1xcajam.r-ipm5af.r-136ojw6.r-1hycxz');
+      if (searchContainer) {
+        searchContainer.style.display = 'none';
+        searchContainer.setAttribute('data-xsaved-hidden', 'true');
+      }
+    }
 
     // Create loading state
     const loadingDiv = document.createElement('div');
@@ -429,6 +448,17 @@ class XSavedContentScript {
     const gridOverlay = document.getElementById('xsaved-grid-overlay');
     if (gridOverlay) {
       gridOverlay.remove();
+    }
+
+    // Restore scrolling on the main page
+    document.body.style.overflow = '';
+    document.documentElement.style.overflow = '';
+
+    // Show X.com search input
+    const searchContainer = document.querySelector('div[data-xsaved-hidden="true"]');
+    if (searchContainer) {
+      searchContainer.style.display = '';
+      searchContainer.removeAttribute('data-xsaved-hidden');
     }
   }
 
