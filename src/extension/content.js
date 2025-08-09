@@ -394,6 +394,7 @@ class XSavedContentScript {
     // Create grid overlay
     const gridOverlay = document.createElement('div');
     gridOverlay.id = 'xsaved-grid-overlay';
+    gridOverlay.className = 'xsaved-grid-overlay';
     gridOverlay.style.cssText = `
       position: fixed;
       top: 50px;
@@ -712,10 +713,14 @@ class XSavedContentScript {
 
     // Create grid
     const grid = document.createElement('div');
+    grid.className = 'grid';
+    grid.id = 'xsaved-bookmarks-grid';
     grid.style.cssText = `
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-      gap: 20px;
+      justify-content: center;
+      grid-template-columns: repeat(3, minmax(0, 210px));
+      gap: 24px;
+      justify-items: center;
       margin-bottom: 40px;
     `;
 
@@ -748,48 +753,227 @@ class XSavedContentScript {
     };
 
     const card = document.createElement('div');
+    
+    // Apply base card styles with animations
+    const randomVariant = Math.floor(Math.random() * 5) + 1;
+    card.className = `tweet-card float-${randomVariant}`;
     card.style.cssText = `
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      background-color: #1A1A1A;
+      width: 240px;
+      height: 280px;
       border-radius: 12px;
-      padding: 16px;
-      transition: all 0.2s ease;
-      cursor: pointer;
+      margin: 10px;
+      overflow: hidden;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
       position: relative;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.8);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     `;
 
     // Hover effect
     card.addEventListener('mouseenter', () => {
-      card.style.background = 'rgba(255, 255, 255, 0.08)';
-      card.style.borderColor = 'rgba(29, 161, 242, 0.5)';
+      card.style.transform = 'translateY(-5px)';
+      card.style.boxShadow = '0 8px 15px rgba(0, 0, 0, 0.3)';
     });
 
     card.addEventListener('mouseleave', () => {
-      card.style.background = 'rgba(255, 255, 255, 0.05)';
-      card.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+      card.style.transform = 'translateY(0)';
+      card.style.boxShadow = '0 4px 10px rgba(0, 0, 0, 0.8)';
     });
 
-    // Author
-    const author = document.createElement('div');
-    author.style.cssText = `
-      color: #1DA1F2;
-      font-weight: 600;
-      font-size: 14px;
-      margin-bottom: 8px;
+    // X icon - show on hover
+    const xIcon = document.createElement('div');
+    xIcon.style.cssText = `
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background-color: rgba(0, 0, 0, 0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 10;
+      transition: background-color 0.2s ease;
     `;
-    author.textContent = `@${safeBookmark.author}`;
+    
+    xIcon.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="#FFFFFF">
+        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+      </svg>
+    `;
 
-    // Content
-    const content = document.createElement('div');
-    content.style.cssText = `
-      color: white;
-      line-height: 1.5;
-      margin-bottom: 12px;
-      font-size: 14px;
+    // Show/hide X icon on hover
+    card.addEventListener('mouseenter', () => {
+      xIcon.style.display = 'flex';
+    });
+
+    card.addEventListener('mouseleave', () => {
+      xIcon.style.display = 'none';
+    });
+
+    // X icon hover effect
+    xIcon.addEventListener('mouseenter', () => {
+      xIcon.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+    });
+
+    xIcon.addEventListener('mouseleave', () => {
+      xIcon.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    });
+
+    // X icon click handler
+    xIcon.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.open(`https://x.com/i/web/status/${safeBookmark.id}`, '_blank');
+    });
+
+    // Tweet content container
+    const contentContainer = document.createElement('div');
+    contentContainer.style.cssText = `
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      padding: 16px;
+      box-sizing: border-box;
+      border-radius: 12px;
     `;
-    content.textContent = safeBookmark.text.length > 200 
-      ? safeBookmark.text.substring(0, 200) + '...' 
-      : safeBookmark.text;
+
+    // Profile section
+    const profileSection = document.createElement('div');
+    profileSection.style.cssText = `
+      display: flex;
+      align-items: center;
+      margin-bottom: 16px;
+    `;
+
+    // Profile pic
+    const profilePic = document.createElement('div');
+    profilePic.style.cssText = `
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background-color: #5DADEC;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #FFFFFF;
+      font-weight: bold;
+      margin-right: 8px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      overflow: hidden;
+    `;
+    
+    // Get first letter of username for profile pic
+    const getInitial = (name) => {
+      return name.charAt(0).toUpperCase();
+    };
+    
+    profilePic.textContent = getInitial(safeBookmark.author);
+
+    // User info
+    const userInfo = document.createElement('div');
+    
+    const userName = document.createElement('div');
+    userName.style.cssText = `
+      color: #FFFFFF;
+      font-size: 14px;
+      font-weight: bold;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 184px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    `;
+    userName.textContent = safeBookmark.author;
+
+    const userHandle = document.createElement('div');
+    userHandle.style.cssText = `
+      color: #888888;
+      font-size: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    `;
+    userHandle.textContent = `@${safeBookmark.author}`;
+
+    userInfo.appendChild(userName);
+    userInfo.appendChild(userHandle);
+
+    profileSection.appendChild(profilePic);
+    profileSection.appendChild(userInfo);
+
+    // Tweet text
+    const tweetText = document.createElement('div');
+    tweetText.style.cssText = `
+      color: #FFFFFF;
+      font-size: 14px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin-bottom: 16px;
+      line-height: 1.2;
+      max-height: ${safeBookmark.media_urls && safeBookmark.media_urls.length > 0 ? '100px' : '300px'};
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: ${safeBookmark.media_urls && safeBookmark.media_urls.length > 0 ? '3' : 'none'};
+      -webkit-box-orient: vertical;
+      text-overflow: ellipsis;
+      position: relative;
+    `;
+    tweetText.textContent = safeBookmark.text;
+
+    // Check if text is truncated and add "more" link
+    if (safeBookmark.text.length > 200) {
+      const moreLink = document.createElement('span');
+      moreLink.style.cssText = `
+        color: #3498db;
+        cursor: pointer;
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        background-color: #1A1A1A;
+        padding-left: 4px;
+      `;
+      moreLink.innerHTML = '<small class="underline">more</small>';
+      
+      moreLink.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.showTweetModal(safeBookmark);
+      });
+      
+      tweetText.appendChild(moreLink);
+    }
+
+    // Media (if any)
+    let mediaContainer = null;
+    if (safeBookmark.media_urls && safeBookmark.media_urls.length > 0) {
+      mediaContainer = document.createElement('div');
+      mediaContainer.style.cssText = `
+        width: calc(100% - 0px);
+        height: 100px;
+        margin-top: auto;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        position: absolute;
+        bottom: 16px;
+        left: 16px;
+        right: 16px;
+      `;
+
+      const mediaImage = document.createElement('img');
+      mediaImage.src = safeBookmark.media_urls[0];
+      mediaImage.style.cssText = `
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: cover;
+        image-rendering: pixelated;
+      `;
+      mediaImage.alt = '';
+
+      mediaContainer.appendChild(mediaImage);
+    }
 
     // Tags
     const tagsContainer = document.createElement('div');
@@ -798,6 +982,10 @@ class XSavedContentScript {
       flex-wrap: wrap;
       gap: 6px;
       margin-bottom: 8px;
+      position: absolute;
+      bottom: ${safeBookmark.media_urls && safeBookmark.media_urls.length > 0 ? '120px' : '16px'};
+      left: 16px;
+      right: 16px;
     `;
 
     if (safeBookmark.tags && safeBookmark.tags.length > 0) {
@@ -816,26 +1004,258 @@ class XSavedContentScript {
       });
     }
 
+    // Assemble content
+    contentContainer.appendChild(profileSection);
+    contentContainer.appendChild(tweetText);
+    if (mediaContainer) {
+      contentContainer.appendChild(mediaContainer);
+    }
+    contentContainer.appendChild(tagsContainer);
+
+    // Assemble card
+    card.appendChild(xIcon);
+    card.appendChild(contentContainer);
+
+    // Click to open original tweet
+    card.addEventListener('click', () => {
+      window.open(`https://x.com/i/web/status/${safeBookmark.id}`, '_blank');
+    });
+
+    return card;
+  }
+
+  showTweetModal(tweet) {
+    // Remove existing modal if any
+    const existingModal = document.getElementById('xsaved-tweet-modal');
+    if (existingModal) {
+      existingModal.remove();
+    }
+
+    // Create modal overlay
+    const modalOverlay = document.createElement('div');
+    modalOverlay.id = 'xsaved-tweet-modal';
+    modalOverlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.7);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 10000;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    `;
+
+    // Create modal content
+    const modalContent = document.createElement('div');
+    modalContent.style.cssText = `
+      background-color: #1A1A1A;
+      border-radius: 12px;
+      width: 500px;
+      max-width: 90%;
+      max-height: 90%;
+      overflow: auto;
+      padding: 24px;
+      position: relative;
+      color: #FFFFFF;
+    `;
+
+    // Close button
+    const closeButton = document.createElement('div');
+    closeButton.style.cssText = `
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      color: #FFFFFF;
+      font-size: 24px;
+      cursor: pointer;
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background-color: rgba(255, 255, 255, 0.1);
+      transition: background-color 0.2s ease;
+    `;
+    closeButton.textContent = '×';
+    
+    closeButton.addEventListener('mouseenter', () => {
+      closeButton.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+    });
+    
+    closeButton.addEventListener('mouseleave', () => {
+      closeButton.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+    });
+
+    // Profile section
+    const profileSection = document.createElement('div');
+    profileSection.style.cssText = `
+      display: flex;
+      align-items: center;
+      margin-bottom: 24px;
+    `;
+
+    // Profile pic
+    const profilePic = document.createElement('div');
+    profilePic.style.cssText = `
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background-color: #5DADEC;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #FFFFFF;
+      font-weight: bold;
+      margin-right: 12px;
+      font-size: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      overflow: hidden;
+    `;
+    
+    const getInitial = (name) => {
+      return name.charAt(0).toUpperCase();
+    };
+    
+    profilePic.textContent = getInitial(tweet.author);
+
+    // User info
+    const userInfo = document.createElement('div');
+    
+    const userName = document.createElement('div');
+    userName.style.cssText = `
+      color: #FFFFFF;
+      font-size: 18px;
+      font-weight: bold;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin-bottom: 4px;
+    `;
+    userName.textContent = tweet.author;
+
+    const userHandle = document.createElement('div');
+    userHandle.style.cssText = `
+      color: #888888;
+      font-size: 14px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    `;
+    userHandle.textContent = `@${tweet.author}`;
+
+    userInfo.appendChild(userName);
+    userInfo.appendChild(userHandle);
+
+    profileSection.appendChild(profilePic);
+    profileSection.appendChild(userInfo);
+
+    // Tweet text
+    const tweetText = document.createElement('div');
+    tweetText.style.cssText = `
+      color: #FFFFFF;
+      font-size: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin-bottom: 24px;
+      line-height: 1.5;
+    `;
+    tweetText.textContent = tweet.text;
+
+    // Media (if any)
+    let mediaSection = null;
+    if (tweet.media_urls && tweet.media_urls.length > 0) {
+      mediaSection = document.createElement('div');
+      mediaSection.style.cssText = `
+        width: 100%;
+        max-height: 400px;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        border-radius: 12px;
+        margin-bottom: 16px;
+      `;
+
+      const mediaImage = document.createElement('img');
+      mediaImage.src = tweet.media_urls[0];
+      mediaImage.style.cssText = `
+        width: 100%;
+        object-fit: contain;
+        max-height: 400px;
+      `;
+      mediaImage.alt = '';
+
+      mediaSection.appendChild(mediaImage);
+    }
+
+    // Tags
+    const tagsSection = document.createElement('div');
+    tagsSection.style.cssText = `
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+    `;
+
+    if (tweet.tags && tweet.tags.length > 0) {
+      tweet.tags.forEach(tag => {
+        const tagElement = document.createElement('span');
+        tagElement.style.cssText = `
+          background: rgba(29, 161, 242, 0.2);
+          color: #1DA1F2;
+          padding: 6px 12px;
+          border-radius: 16px;
+          font-size: 14px;
+          font-weight: 500;
+        `;
+        tagElement.textContent = `#${tag}`;
+        tagsSection.appendChild(tagElement);
+      });
+    }
+
     // Timestamp
     const timestamp = document.createElement('div');
     timestamp.style.cssText = `
       color: rgba(255, 255, 255, 0.6);
-      font-size: 12px;
+      font-size: 14px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     `;
-    timestamp.textContent = new Date(safeBookmark.bookmark_timestamp).toLocaleDateString();
+    timestamp.textContent = new Date(tweet.bookmark_timestamp).toLocaleString();
 
-    // Assemble card
-    card.appendChild(author);
-    card.appendChild(content);
-    card.appendChild(tagsContainer);
-    card.appendChild(timestamp);
+    // Assemble modal
+    modalContent.appendChild(closeButton);
+    modalContent.appendChild(profileSection);
+    modalContent.appendChild(tweetText);
+    if (mediaSection) {
+      modalContent.appendChild(mediaSection);
+    }
+    modalContent.appendChild(tagsSection);
+    modalContent.appendChild(timestamp);
 
-    // Click to open original tweet
-    card.addEventListener('click', () => {
-      window.open(`https://x.com/i/web/status/${bookmark.id}`, '_blank');
+    modalOverlay.appendChild(modalContent);
+
+    // Event listeners
+    const closeModal = () => {
+      modalOverlay.remove();
+    };
+
+    closeButton.addEventListener('click', closeModal);
+    modalOverlay.addEventListener('click', (e) => {
+      if (e.target === modalOverlay) {
+        closeModal();
+      }
     });
 
-    return card;
+    // Keyboard support
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        closeModal();
+        document.removeEventListener('keydown', handleKeyDown);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+
+    // Add to page
+    document.body.appendChild(modalOverlay);
   }
 
   renderGridError(container, message) {
