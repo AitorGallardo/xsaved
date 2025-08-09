@@ -514,12 +514,92 @@ class XSavedContentScript {
   renderBookmarksGrid(container, bookmarks) {
     container.innerHTML = '';
 
-    // TODO: Grid UI Improvements - Phase 2
-    // - Fixed header positioning issue: moved header outside overlay container
-    // - Removed X button: using only toggle for view switching
-    // - Aligned tag filters with search bar in same row
-    // - Implemented multi-select tag filtering with visual grouping
-    // - Added more sample tags for scroll testing
+    // Helper function to group bookmarks by month/year
+    const groupBookmarksByDate = (bookmarks) => {
+      const grouped = bookmarks.reduce((acc, bookmark) => {
+        const date = new Date(bookmark.created_at);
+        const monthYear = `${date.getFullYear()}-${date.getMonth()}`;
+        
+        if (!acc[monthYear]) {
+          acc[monthYear] = {
+            date: new Date(date.getFullYear(), date.getMonth(), 1),
+            bookmarks: []
+          };
+        }
+        
+        acc[monthYear].bookmarks.push(bookmark);
+        return acc;
+      }, {});
+      
+      // Convert to array and sort by date (newest first)
+      return Object.values(grouped).sort((a, b) => b.date.getTime() - a.date.getTime());
+    };
+
+    // Convert grouped bookmarks to grid items with separators
+    const createGridItems = (bookmarks) => {
+      const grouped = groupBookmarksByDate(bookmarks);
+      const items = [];
+      let dealIndex = 0;
+      
+      grouped.forEach((group, groupIndex) => {
+        // Add separator for each group (except the very first one)
+        if (groupIndex > 0) {
+          items.push({
+            type: 'separator',
+            date: group.date
+          });
+        }
+        
+        // Add all bookmarks in this group
+        group.bookmarks.forEach(bookmark => {
+          items.push({
+            type: 'bookmark',
+            bookmark: bookmark,
+            dealIndex
+          });
+          dealIndex++;
+        });
+      });
+      
+      return items;
+    };
+
+    // Create date separator element (matching DateSeparator.tsx exactly)
+    const createDateSeparator = (date) => {
+      const separator = document.createElement('div');
+      separator.style.cssText = `
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: center;
+        margin: 24px 0;
+        padding-left: 16px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      `;
+
+      const dateText = document.createElement('span');
+      dateText.style.cssText = `
+        font-size: 14px;
+        font-weight: 500;
+        color: #9CA3AF;
+        white-space: nowrap;
+      `;
+      dateText.textContent = date.toLocaleDateString('en-US', { 
+        month: 'long', 
+        year: 'numeric' 
+      });
+
+      const line = document.createElement('div');
+      line.style.cssText = `
+        flex-grow: 1;
+        height: 1px;
+        margin-left: 16px;
+        background: linear-gradient(to right, #4B5563, transparent);
+      `;
+
+      separator.appendChild(dateText);
+      separator.appendChild(line);
+      return separator;
+    };
 
     // Create fixed header container (outside the overlay container)
     const headerContainer = document.createElement('div');
@@ -725,10 +805,16 @@ class XSavedContentScript {
       margin-bottom: 40px;
     `;
 
-    // Render bookmark cards
-    bookmarks.forEach(bookmark => {
-      const card = this.createBookmarkCard(bookmark);
-      grid.appendChild(card);
+    // Render grouped bookmark cards with date separators
+    const gridItems = createGridItems(bookmarks);
+    gridItems.forEach(item => {
+      if (item.type === 'separator') {
+        const separator = createDateSeparator(item.date);
+        grid.appendChild(separator);
+      } else {
+        const card = this.createBookmarkCard(item.bookmark);
+        grid.appendChild(card);
+      }
     });
 
     container.appendChild(contentContainer);
@@ -755,9 +841,8 @@ class XSavedContentScript {
 
     const card = document.createElement('div');
     
-    // Apply base card styles with animations
-    const randomVariant = Math.floor(Math.random() * 5) + 1;
-    card.className = `tweet-card float-${randomVariant}`;
+    // Apply base card styles without floating animations
+    card.className = 'tweet-card';
     card.style.cssText = `
       background-color: #1A1A1A;
       width: 240px;
@@ -1293,11 +1378,103 @@ class XSavedContentScript {
              tags.some(tag => tag.toLowerCase().includes(query.toLowerCase()));
     });
 
-    // Clear and re-render grid
+    // Helper function to group bookmarks by month/year (same as in renderBookmarksGrid)
+    const groupBookmarksByDate = (bookmarks) => {
+      const grouped = bookmarks.reduce((acc, bookmark) => {
+        const date = new Date(bookmark.bookmark_timestamp || bookmark.created_at);
+        const monthYear = `${date.getFullYear()}-${date.getMonth()}`;
+        
+        if (!acc[monthYear]) {
+          acc[monthYear] = {
+            date: new Date(date.getFullYear(), date.getMonth(), 1),
+            bookmarks: []
+          };
+        }
+        
+        acc[monthYear].bookmarks.push(bookmark);
+        return acc;
+      }, {});
+      
+      return Object.values(grouped).sort((a, b) => b.date.getTime() - a.date.getTime());
+    };
+
+    // Convert grouped bookmarks to grid items with separators
+    const createGridItems = (bookmarks) => {
+      const grouped = groupBookmarksByDate(bookmarks);
+      const items = [];
+      let dealIndex = 0;
+      
+      grouped.forEach((group, groupIndex) => {
+        // Add separator for each group (except the very first one)
+        if (groupIndex > 0) {
+          items.push({
+            type: 'separator',
+            date: group.date
+          });
+        }
+        
+        // Add all bookmarks in this group
+        group.bookmarks.forEach(bookmark => {
+          items.push({
+            type: 'bookmark',
+            bookmark: bookmark,
+            dealIndex
+          });
+          dealIndex++;
+        });
+      });
+      
+      return items;
+    };
+
+    // Create date separator element (matching DateSeparator.tsx exactly)
+    const createDateSeparator = (date) => {
+      const separator = document.createElement('div');
+      separator.style.cssText = `
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: center;
+        margin: 24px 0;
+        padding-left: 16px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      `;
+
+      const dateText = document.createElement('span');
+      dateText.style.cssText = `
+        font-size: 14px;
+        font-weight: 500;
+        color: #9CA3AF;
+        white-space: nowrap;
+      `;
+      dateText.textContent = date.toLocaleDateString('en-US', { 
+        month: 'long', 
+        year: 'numeric' 
+      });
+
+      const line = document.createElement('div');
+      line.style.cssText = `
+        flex-grow: 1;
+        height: 1px;
+        margin-left: 16px;
+        background: linear-gradient(to right, #4B5563, transparent);
+      `;
+
+      separator.appendChild(dateText);
+      separator.appendChild(line);
+      return separator;
+    };
+
+    // Clear and re-render grid with grouped structure
     grid.innerHTML = '';
-    filteredBookmarks.forEach(bookmark => {
-      const card = this.createBookmarkCard(bookmark);
-      grid.appendChild(card);
+    const gridItems = createGridItems(filteredBookmarks);
+    gridItems.forEach(item => {
+      if (item.type === 'separator') {
+        const separator = createDateSeparator(item.date);
+        grid.appendChild(separator);
+      } else {
+        const card = this.createBookmarkCard(item.bookmark);
+        grid.appendChild(card);
+      }
     });
   }
 
