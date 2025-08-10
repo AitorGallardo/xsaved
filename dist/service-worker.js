@@ -3405,6 +3405,26 @@ const service_worker_broadcastStateUpdate = () => {
 // INITIALIZATION
 // ===============================
 const serviceWorker = new ExtensionServiceWorker();
+// Set up context menu for easy debug access
+chrome.runtime.onInstalled.addListener(() => {
+    // Create context menu item for debug page
+    chrome.contextMenus.create({
+        id: 'openDebugPage',
+        title: '🔧 Open Debug Page',
+        contexts: ['action'] // Only show when right-clicking extension icon
+    });
+    console.log('🚀 Extension installed - initializing service worker');
+    serviceWorker.initialize();
+});
+// Handle context menu clicks
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId === 'openDebugPage') {
+        // Open debug page in new tab
+        chrome.tabs.create({
+            url: chrome.runtime.getURL('src/ui/debug.html')
+        });
+    }
+});
 // Initialize on startup
 chrome.runtime.onStartup.addListener(() => {
     console.log('🚀 Extension startup - initializing service worker');

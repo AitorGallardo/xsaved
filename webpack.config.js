@@ -49,6 +49,14 @@ module.exports = {
           to: 'src/ui/popup.js'
         },
         { 
+          from: 'src/ui/debug.html', 
+          to: 'src/ui/debug.html'
+        },
+        { 
+          from: 'src/ui/debug.js', 
+          to: 'src/ui/debug.js'
+        },
+        { 
           from: 'src/ui/styles.css', 
           to: 'src/ui/styles.css'
         },
