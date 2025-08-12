@@ -21,7 +21,7 @@ export class CSVGenerator {
         'author',
         'author_id',
         'created_at',
-        'bookmark_timestamp',
+        'bookmarked_at',
         'tags',
         'likes',
         'retweets',
@@ -39,7 +39,7 @@ export class CSVGenerator {
         this.escapeCsvField(bookmark.author),
         this.escapeCsvField(bookmark.author_id),
         this.escapeCsvField(bookmark.created_at),
-        this.escapeCsvField(bookmark.bookmark_timestamp),
+        this.escapeCsvField(bookmark.bookmarked_at),
         this.escapeCsvField(bookmark.tags?.join('; ') || ''),
         bookmark.likes?.toString() || '0',
         bookmark.retweets?.toString() || '0',
@@ -110,7 +110,7 @@ export class CSVGenerator {
       console.log(`📊 Generating custom CSV export with columns: ${columns.join(', ')}`);
 
       const validColumns = [
-        'id', 'text', 'author', 'author_id', 'created_at', 'bookmark_timestamp',
+        'id', 'text', 'author', 'author_id', 'created_at', 'bookmarked_at',
         'tags', 'likes', 'retweets', 'replies', 'url', 'media_urls',
         'is_quote', 'is_reply', 'quoted_tweet', 'reply_to'
       ];
@@ -169,8 +169,8 @@ export class CSVGenerator {
         return bookmark.author_id;
       case 'created_at':
         return bookmark.created_at;
-      case 'bookmark_timestamp':
-        return bookmark.bookmark_timestamp;
+      case 'bookmarked_at':
+        return bookmark.bookmarked_at;
       case 'tags':
         return bookmark.tags?.join('; ') || '';
       case 'likes':

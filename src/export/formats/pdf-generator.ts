@@ -238,7 +238,7 @@ export class PDFGenerator {
 
       // Sort by bookmark timestamp (newest first)
       const sortedBookmarks = [...bookmarks].sort((a, b) => 
-        new Date(b.bookmark_timestamp).getTime() - new Date(a.bookmark_timestamp).getTime()
+        new Date(b.bookmarked_at).getTime() - new Date(a.bookmarked_at).getTime()
       );
 
       const htmlContent = this.generateReadingListHTML(sortedBookmarks, options);

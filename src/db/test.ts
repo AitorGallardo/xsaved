@@ -11,7 +11,7 @@ const sampleBookmark: BookmarkEntity = {
   text: 'Amazing thread about AI developments and machine learning breakthroughs in 2024! #AI #MachineLearning #Tech',
   author: 'levelsio',
   created_at: '2024-01-15T10:30:00.000Z',
-  bookmark_timestamp: new Date().toISOString(),
+  bookmarked_at: new Date().toISOString(),
   tags: ['ai', 'machinelearning', 'tech'],
   media_urls: ['https://pbs.twimg.com/media/example.jpg']
 };
@@ -21,7 +21,7 @@ const sampleBookmark2: BookmarkEntity = {
   text: 'React vs Vue vs Angular comparison 2024 - which framework should you choose? #React #Vue #Angular #JavaScript',
   author: 'wesbos',
   created_at: '2024-01-16T14:20:00.000Z',
-  bookmark_timestamp: new Date().toISOString(),
+  bookmarked_at: new Date().toISOString(),
   tags: ['react', 'vue', 'angular', 'javascript'],
   media_urls: []
 };
@@ -131,7 +131,7 @@ export async function runPerformanceTests(): Promise<void> {
       text: `Test bookmark ${i} with some content about technology and programming #test #perf`,
       author: `user${i % 10}`,
       created_at: new Date(Date.now() - i * 60000).toISOString(),
-      bookmark_timestamp: new Date().toISOString(),
+      bookmarked_at: new Date().toISOString(),
       tags: [`tag${i % 5}`, 'test', 'performance'],
       media_urls: i % 3 === 0 ? ['https://example.com/image.jpg'] : undefined
     });

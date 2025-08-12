@@ -154,6 +154,7 @@ export const processBookmarksResponse = (data) => {
           text: legacy?.full_text,
           author: user?.screen_name,
           created_at: legacy?.created_at,
+          sortIndex: entry?.sortIndex, 
           // Store full data for media extraction
           FULL_DATA: result,
         };
@@ -185,6 +186,7 @@ export const enhanceBookmarksWithMetadata = (bookmarks) => {
       text: bookmark.text,
       author: bookmark.author,
       created_at: bookmark.created_at,
+      sortIndex: bookmark.sortIndex, // Pass through the sortIndex
       media_urls: extractMediaUrls(bookmark.FULL_DATA)
     };
     

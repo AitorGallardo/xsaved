@@ -14,6 +14,7 @@ import {
   getCsrfToken,
   checkXLoginStatus 
 } from './utils/fetcher.js';
+import { getSortIndexDateISO } from '../utils/sortIndex-utils';
 import { notifyContentScript, updateProgress, notifyPopup } from './utils/communicator.js';
 import { delay, NetworkError, RateLimitError } from './utils/helpers.js';
 
@@ -146,7 +147,7 @@ class ExtensionServiceWorker {
           timeSinceLastSync: timeSinceLastSync ? Math.round(timeSinceLastSync / 60000) + 'min' : null
         });
         
-        resolve();
+        resolve(undefined);
       });
     });
   }
@@ -242,6 +243,8 @@ class ExtensionServiceWorker {
 
 const saveBookmarkToLocal = async (bookmark, userTags = []) => {
   try {
+
+    
     // Ensure service worker is initialized
     await serviceWorker.initialize();
     
@@ -250,13 +253,15 @@ const saveBookmarkToLocal = async (bookmark, userTags = []) => {
       id: bookmark.id,
       text: bookmark.text || '',
       author: bookmark.author || '',
-      created_at: bookmark.created_at || new Date().toISOString(),
-      bookmark_timestamp: new Date().toISOString(),
+      created_at: bookmark.created_at || null,
+      bookmarked_at: bookmark.sortIndex ? getSortIndexDateISO(bookmark.sortIndex) : null,
       tags: userTags.length > 0 ? userTags : (bookmark.tags || []),
       media_urls: bookmark.media_urls || [],
       // Add search tokenization for Component 2
       textTokens: tokenizeText(bookmark.text || '')
     };
+    
+
     
     // Save to IndexedDB (Component 1) - TEMPORARILY USE CHROME.STORAGE FOR TESTING
     if (serviceWorker.db) {
@@ -522,7 +527,7 @@ const handleSearchBookmarks = async (query, sendResponse) => {
       // Fallback to chrome.storage.local search for testing
       console.log('🔍 Using fallback search (testing mode)');
       const result = await chrome.storage.local.get(null);
-      const bookmarks = Object.keys(result)
+      const bookmarks = Object.keys(result || {})
         .filter(key => key.startsWith('bookmark_'))
         .map(key => result[key])
         .filter(bookmark => {
@@ -697,7 +702,7 @@ const sanitizeBookmarks = (bookmarks) => {
       text: bookmark.text,
       author: bookmark.author,
       created_at: bookmark.created_at,
-      bookmark_timestamp: bookmark.bookmark_timestamp,
+      bookmarked_at: bookmark.bookmarked_at,
       tags: Array.isArray(bookmark.tags) ? bookmark.tags : [],
       url: bookmark.url,
       // Only include safe, serializable properties
@@ -883,7 +888,7 @@ class InlineExportManager {
       console.log(`📊 [SW] Generating CSV for ${bookmarks.length} bookmarks`);
 
       const headers = [
-        'id', 'text', 'author', 'created_at', 'bookmark_timestamp',
+        'id', 'text', 'author', 'created_at', 'bookmarked_at',
         'tags', 'url'
       ];
 
@@ -892,7 +897,7 @@ class InlineExportManager {
         this.escapeCsvField(bookmark.text || ''),
         bookmark.author || '',
         bookmark.created_at || '',
-        bookmark.bookmark_timestamp || '',
+        bookmark.bookmarked_at || '',
         (bookmark.tags || []).join(', '),
         bookmark.url || ''
       ]);
@@ -931,7 +936,7 @@ class InlineExportManager {
           text: bookmark.text,
           author: bookmark.author,
           created_at: bookmark.created_at,
-          bookmark_timestamp: bookmark.bookmark_timestamp,
+          bookmarked_at: bookmark.bookmarked_at,
           tags: bookmark.tags || [],
           url: bookmark.url
         }))
@@ -1256,7 +1261,7 @@ if (typeof self !== 'undefined') {
         text: 'Test bookmark for CRUD operations',
         author: 'test_user',
         created_at: new Date().toISOString(),
-        bookmark_timestamp: new Date().toISOString(),
+        bookmarked_at: new Date().toISOString(),
         tags: ['test', 'crud'],
         media_urls: [],
         textTokens: ['test', 'bookmark', 'crud', 'operations']

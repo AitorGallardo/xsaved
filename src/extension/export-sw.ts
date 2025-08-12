@@ -34,7 +34,7 @@ export interface BookmarkEntity {
   text: string;
   author: string;
   created_at: string;
-  bookmark_timestamp: string;
+  bookmarked_at: string;
   tags?: string[];
   url?: string;
 }
@@ -100,7 +100,7 @@ export class ServiceWorkerExportManager {
       console.log(`📊 [SW] Generating CSV for ${bookmarks.length} bookmarks`);
 
       const headers = [
-        'id', 'text', 'author', 'created_at', 'bookmark_timestamp',
+        'id', 'text', 'author', 'created_at', 'bookmarked_at',
         'tags', 'url'
       ];
 
@@ -109,7 +109,7 @@ export class ServiceWorkerExportManager {
         this.escapeCsvField(bookmark.text || ''),
         bookmark.author || '',
         bookmark.created_at || '',
-        bookmark.bookmark_timestamp || '',
+        bookmark.bookmarked_at || '',
         (bookmark.tags || []).join(', '),
         bookmark.url || ''
       ]);
@@ -151,7 +151,7 @@ export class ServiceWorkerExportManager {
           text: bookmark.text,
           author: bookmark.author,
           created_at: bookmark.created_at,
-          bookmark_timestamp: bookmark.bookmark_timestamp,
+          bookmarked_at: bookmark.bookmarked_at,
           tags: bookmark.tags || [],
           url: bookmark.url
         }))

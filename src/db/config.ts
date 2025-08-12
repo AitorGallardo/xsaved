@@ -6,7 +6,7 @@
 import { DatabaseConfig } from './types';
 
 export const DATABASE_NAME = 'XSavedDB';
-export const DATABASE_VERSION = 2;
+export const DATABASE_VERSION = 3;
 
 // Store names
 export const STORES = {
@@ -44,8 +44,8 @@ export const DB_CONFIG: DatabaseConfig = {
           multiEntry: true    // ← KEY: Each tag creates separate index entry
         },
         {
-          name: 'bookmark_timestamp',
-          keyPath: 'bookmark_timestamp',
+          name: 'bookmarked_at',
+          keyPath: 'bookmarked_at',
           unique: false
         },
         {

@@ -14,7 +14,10 @@ export interface BookmarkEntity {
   
   // Timestamps  
   created_at: string;                   // When tweet was posted (ISO string)
-  bookmark_timestamp: string;           // When user bookmarked (ISO string)
+  bookmarked_at: string;                // When user bookmarked (parsed from Twitter sortIndex)
+  
+  // Twitter data
+  sortIndex?: string;                   // Twitter Snowflake ID (optional, used for date parsing)
   
   // User organization
   tags: string[];                       // User-defined tags
@@ -84,7 +87,7 @@ export interface IndexConfig {
 export interface QueryOptions {
   limit?: number;
   offset?: number;
-  sortBy?: 'created_at' | 'bookmark_timestamp' | 'author';
+  sortBy?: 'created_at' | 'bookmarked_at' | 'author';
   sortOrder?: 'asc' | 'desc';
   orderBy?: string;
   direction?: 'asc' | 'desc';

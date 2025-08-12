@@ -126,7 +126,7 @@ export class JSONGenerator {
       },
       timestamps: {
         created_at: bookmark.created_at,
-        bookmarked_at: bookmark.bookmark_timestamp
+        bookmarked_at: bookmark.bookmarked_at
       },
       engagement: {
         likes: bookmark.likes || 0,
@@ -158,7 +158,7 @@ export class JSONGenerator {
         text: bookmark.text,
         author: bookmark.author,
         created_at: bookmark.created_at,
-        bookmarked_at: bookmark.bookmark_timestamp,
+        bookmarked_at: bookmark.bookmarked_at,
         url: bookmark.url,
         tags: bookmark.tags || []
       }));
@@ -195,7 +195,7 @@ export class JSONGenerator {
       console.log(`🔧 Generating custom JSON export with fields: ${fields.join(', ')}`);
 
       const validFields = [
-        'id', 'text', 'author', 'author_id', 'created_at', 'bookmark_timestamp',
+        'id', 'text', 'author', 'author_id', 'created_at', 'bookmarked_at',
         'tags', 'likes', 'retweets', 'replies', 'url', 'media_urls',
         'is_quote', 'is_reply', 'quoted_tweet', 'reply_to'
       ];
@@ -249,8 +249,8 @@ export class JSONGenerator {
         return bookmark.author_id;
       case 'created_at':
         return bookmark.created_at;
-      case 'bookmark_timestamp':
-        return bookmark.bookmark_timestamp;
+      case 'bookmarked_at':
+        return bookmark.bookmarked_at;
       case 'tags':
         return bookmark.tags || [];
       case 'likes':

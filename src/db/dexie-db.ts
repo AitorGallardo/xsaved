@@ -34,7 +34,7 @@ export class XSavedDexieDB extends Dexie {
         id,
         author,
         created_at,
-        bookmark_timestamp,
+        src/extension/,
         *tags,
         *textTokens
       `,
@@ -79,8 +79,8 @@ export class XSavedDexieDB extends Dexie {
       }
       
       // Ensure required timestamps
-      if (!obj.bookmark_timestamp) {
-        obj.bookmark_timestamp = new Date().toISOString();
+      if (!obj.bookmarked_at) {
+        obj.bookmarked_at = new Date().toISOString();
       }
       
       console.log(`🔄 Creating bookmark: ${obj.id}`);
@@ -163,12 +163,12 @@ export class XSavedDexieDB extends Dexie {
    * Get all bookmarks with optional sorting
    */
   async getAllBookmarks(options: {
-    sortBy?: 'created_at' | 'bookmark_timestamp' | 'author';
+    sortBy?: 'created_at' | 'bookmarked_at' | 'author';
     sortOrder?: 'asc' | 'desc';
     limit?: number;
   } = {}): Promise<BookmarkEntity[]> {
     try {
-      let query = this.bookmarks.orderBy(options.sortBy || 'bookmark_timestamp');
+      let query = this.bookmarks.orderBy(options.sortBy || 'bookmarked_at');
       
       if (options.sortOrder === 'asc') {
         // Keep ascending order
@@ -198,7 +198,7 @@ export class XSavedDexieDB extends Dexie {
    */
   async searchBookmarks(query: string, options: {
     limit?: number;
-    sortBy?: 'created_at' | 'bookmark_timestamp';
+    sortBy?: 'created_at' | 'bookmarked_at';
     sortOrder?: 'asc' | 'desc';
   } = {}): Promise<BookmarkEntity[]> {
     if (!query.trim()) {

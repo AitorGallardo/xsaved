@@ -13,7 +13,7 @@ const testBookmarks: BookmarkEntity[] = [
     text: 'Amazing React tutorial with TypeScript and modern best practices #react #typescript #tutorial',
     author: 'wesbos',
     created_at: '2024-01-15T10:30:00.000Z',
-    bookmark_timestamp: new Date().toISOString(),
+    bookmarked_at: new Date().toISOString(),
     tags: ['react', 'typescript', 'tutorial', 'frontend'],
     media_urls: ['https://example.com/react-tutorial.jpg']
   },
@@ -22,7 +22,7 @@ const testBookmarks: BookmarkEntity[] = [
     text: 'Machine Learning fundamentals with Python - complete guide for beginners #ai #python #ml',
     author: 'sentdex',
     created_at: '2024-01-16T14:20:00.000Z',
-    bookmark_timestamp: new Date().toISOString(),
+    bookmarked_at: new Date().toISOString(),
     tags: ['ai', 'python', 'machinelearning', 'tutorial'],
     media_urls: []
   },
@@ -31,7 +31,7 @@ const testBookmarks: BookmarkEntity[] = [
     text: 'Vue.js vs React comparison 2024 - which framework should you choose? Performance analysis',
     author: 'traversymedia',
     created_at: '2024-01-17T09:15:00.000Z',
-    bookmark_timestamp: new Date().toISOString(),
+    bookmarked_at: new Date().toISOString(),
     tags: ['vue', 'react', 'comparison', 'frontend'],
     media_urls: ['https://example.com/vue-vs-react.mp4']
   },
@@ -40,7 +40,7 @@ const testBookmarks: BookmarkEntity[] = [
     text: 'Advanced JavaScript patterns and techniques for senior developers. ES2024 features included.',
     author: 'javascript_mastery',
     created_at: '2024-01-18T16:45:00.000Z',
-    bookmark_timestamp: new Date().toISOString(),
+    bookmarked_at: new Date().toISOString(),
     tags: ['javascript', 'advanced', 'patterns'],
     media_urls: []
   },
@@ -49,7 +49,7 @@ const testBookmarks: BookmarkEntity[] = [
     text: 'Building scalable APIs with Node.js and Express. Database optimization tips included.',
     author: 'nodejs_guru',
     created_at: '2024-01-19T11:30:00.000Z',
-    bookmark_timestamp: new Date().toISOString(),
+    bookmarked_at: new Date().toISOString(),
     tags: ['nodejs', 'api', 'backend', 'express'],
     media_urls: []
   }

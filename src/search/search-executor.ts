@@ -50,7 +50,7 @@ export class SearchExecutor {
         // No filters - get recent bookmarks as starting point
         const recentResult = await db.getRecentBookmarks({ limit: 1000 });
         candidateBookmarks = recentResult.data || [];
-        analytics.indexesUsed.push('bookmark_timestamp');
+        analytics.indexesUsed.push('bookmarked_at');
       }
 
       // Apply secondary filters
@@ -155,7 +155,7 @@ export class SearchExecutor {
 
         case 'dateRange':
           result = await this.searchByDateRange(filter.value);
-          analytics.indexesUsed.push('bookmark_timestamp');
+          analytics.indexesUsed.push('bookmarked_at');
           break;
 
         case 'textToken':
@@ -225,7 +225,7 @@ export class SearchExecutor {
       case 'dateRange':
         const { start, end } = filter.value;
         filtered = bookmarks.filter(bookmark => {
-          const bookmarkDate = new Date(bookmark.bookmark_timestamp);
+          const bookmarkDate = new Date(bookmark.bookmarked_at);
           return bookmarkDate >= new Date(start) && bookmarkDate <= new Date(end);
         });
         break;
@@ -286,7 +286,7 @@ export class SearchExecutor {
   }
 
   /**
-   * Search by date range using bookmark_timestamp index
+   * Search by date range using bookmarked_at index
    */
   private async searchByDateRange(dateRange: { start: string; end: string }): Promise<BookmarkEntity[]> {
     return new Promise((resolve, reject) => {
@@ -297,7 +297,7 @@ export class SearchExecutor {
 
       const transaction = db.database.transaction([STORES.BOOKMARKS], 'readonly');
       const store = transaction.objectStore(STORES.BOOKMARKS);
-      const index = store.index('bookmark_timestamp');
+              const index = store.index('bookmarked_at');
       
       const range = IDBKeyRange.bound(dateRange.start, dateRange.end);
       const request = index.getAll(range);

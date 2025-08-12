@@ -178,12 +178,12 @@ export class XSavedDatabase {
    */
   async getRecentBookmarks(options: {
     limit?: number;
-    sortBy?: 'created_at' | 'bookmark_timestamp';
+    sortBy?: 'created_at' | 'bookmarked_at';
   } = {}): Promise<DatabaseResult<BookmarkEntity[]>> {
     try {
       const startTime = performance.now();
       const result = await dexieDB.getAllBookmarks({
-        sortBy: options.sortBy || 'bookmark_timestamp',
+        sortBy: options.sortBy || 'bookmarked_at',
         sortOrder: 'desc',
         limit: options.limit || 50
       });
@@ -250,7 +250,7 @@ export class XSavedDatabase {
     try {
       const startTime = performance.now();
       const result = await dexieDB.getAllBookmarks({
-        sortBy: options.sortBy as 'created_at' | 'bookmark_timestamp' | 'author',
+        sortBy: options.sortBy as 'created_at' | 'bookmarked_at' | 'author',
         sortOrder: options.sortOrder,
         limit: options.limit
       });
@@ -291,7 +291,7 @@ export class XSavedDatabase {
     dateFrom?: string;
     dateTo?: string;
     limit?: number;
-    sortBy?: 'created_at' | 'bookmark_timestamp' | 'relevance';
+    sortBy?: 'created_at' | 'bookmarked_at' | 'relevance';
     sortOrder?: 'asc' | 'desc';
   } = {}): Promise<DatabaseResult<BookmarkEntity[]>> {
     try {

@@ -142,9 +142,14 @@ export const processBookmarksResponse = (data) => {
   try {
     const entries = data?.data?.bookmark_timeline_v2?.timeline?.instructions?.[0]?.entries || [];
     
+    
     const bookmarks = entries
       .filter(entry => entry?.entryId?.startsWith('tweet-'))
       .map(entry => {
+                // DEBUG: Log sortIndex availability
+                console.log(`🥇[Fetcher] Entry ${entry?.entryId}:`, {
+                  sortIndexValue: entry?.sortIndex,
+                });
         const result = entry?.content?.itemContent?.tweet_results?.result;
         const legacy = result?.legacy;
         const user = result?.core?.user_results?.result?.legacy;
@@ -154,6 +159,7 @@ export const processBookmarksResponse = (data) => {
           text: legacy?.full_text,
           author: user?.screen_name,
           created_at: legacy?.created_at,
+          sortIndex: entry?.sortIndex, 
           // Store full data for media extraction
           FULL_DATA: result,
         };
@@ -185,6 +191,7 @@ export const enhanceBookmarksWithMetadata = (bookmarks) => {
       text: bookmark.text,
       author: bookmark.author,
       created_at: bookmark.created_at,
+      sortIndex: bookmark.sortIndex, // Pass through the sortIndex
       media_urls: extractMediaUrls(bookmark.FULL_DATA)
     };
     

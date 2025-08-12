@@ -7,7 +7,7 @@
  * IndexedDB schema with performance-optimized indexes
  */
 const DATABASE_NAME = 'XSavedDB';
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 // Store names
 const STORES = {
     BOOKMARKS: 'bookmarks',
@@ -42,8 +42,8 @@ const DB_CONFIG = {
                     multiEntry: true // ← KEY: Each tag creates separate index entry
                 },
                 {
-                    name: 'bookmark_timestamp',
-                    keyPath: 'bookmark_timestamp',
+                    name: 'bookmarked_at',
+                    keyPath: 'bookmarked_at',
                     unique: false
                 },
                 {
@@ -368,13 +368,33 @@ class XSavedDatabase {
     async _addBookmarkInternal(bookmark) {
         return new Promise(async (resolve, reject) => {
             try {
+                // DEBUG: Log incoming bookmark data
+                console.log(`🔍 Database: Incoming bookmark data for ${bookmark.id}:`, {
+                    hasSortIndex: !!bookmark.sortIndex,
+                    sortIndexValue: bookmark.sortIndex,
+                    hasBookmarkedAt: !!bookmark.bookmarked_at,
+                    bookmarkedAtValue: bookmark.bookmarked_at,
+                    hasCreatedAt: !!bookmark.created_at,
+                    createdAtValue: bookmark.created_at,
+                    allKeys: Object.keys(bookmark)
+                });
                 // Ensure required fields
                 const bookmarkToAdd = {
                     ...bookmark,
-                    bookmark_timestamp: bookmark.bookmark_timestamp || new Date().toISOString(),
+                    bookmarked_at: bookmark.sortIndex ? getSortIndexDateISO(bookmark.sortIndex) : (bookmark.bookmarked_at || new Date().toISOString()),
                     tags: bookmark.tags || [],
                     textTokens: this._tokenizeText(bookmark.text)
                 };
+                // DEBUG: Log processed bookmark data
+                console.log(`🔧 Database: Processed bookmark entity for ${bookmark.id}:`, {
+                    hasSortIndex: !!bookmark.sortIndex,
+                    sortIndexValue: bookmark.sortIndex,
+                    hasBookmarkedAt: !!bookmarkToAdd.bookmarked_at,
+                    bookmarkedAtValue: bookmarkToAdd.bookmarked_at,
+                    hasCreatedAt: !!bookmarkToAdd.created_at,
+                    createdAtValue: bookmarkToAdd.created_at,
+                    bookmarkedAtSource: bookmark.sortIndex ? 'sortIndex' : (bookmark.bookmarked_at ? 'bookmarked_at' : 'new Date()')
+                });
                 // Create transaction for both bookmarks and tags stores
                 const transaction = this._createTransaction([STORES.BOOKMARKS, STORES.TAGS], 'readwrite');
                 const bookmarksStore = transaction.objectStore(STORES.BOOKMARKS);
@@ -1199,7 +1219,7 @@ class SearchExecutor {
                 // No filters - get recent bookmarks as starting point
                 const recentResult = await db.getRecentBookmarks({ limit: 1000 });
                 candidateBookmarks = recentResult.data || [];
-                analytics.indexesUsed.push('bookmark_timestamp');
+                analytics.indexesUsed.push('bookmarked_at');
             }
             // Apply secondary filters
             for (const filter of parsedQuery.queryPlan.secondaryFilters) {
@@ -1277,7 +1297,7 @@ class SearchExecutor {
                     break;
                 case 'dateRange':
                     result = await this.searchByDateRange(filter.value);
-                    analytics.indexesUsed.push('bookmark_timestamp');
+                    analytics.indexesUsed.push('bookmarked_at');
                     break;
                 case 'textToken':
                     result = await this.searchByTextToken(filter.value);
@@ -1325,7 +1345,7 @@ class SearchExecutor {
             case 'dateRange':
                 const { start, end } = filter.value;
                 filtered = bookmarks.filter(bookmark => {
-                    const bookmarkDate = new Date(bookmark.bookmark_timestamp);
+                    const bookmarkDate = new Date(bookmark.bookmarked_at);
                     return bookmarkDate >= new Date(start) && bookmarkDate <= new Date(end);
                 });
                 break;
@@ -1373,7 +1393,7 @@ class SearchExecutor {
         });
     }
     /**
-     * Search by date range using bookmark_timestamp index
+     * Search by date range using bookmarked_at index
      */
     async searchByDateRange(dateRange) {
         return new Promise((resolve, reject) => {
@@ -1383,7 +1403,7 @@ class SearchExecutor {
             }
             const transaction = db.database.transaction([STORES.BOOKMARKS], 'readonly');
             const store = transaction.objectStore(STORES.BOOKMARKS);
-            const index = store.index('bookmark_timestamp');
+            const index = store.index('bookmarked_at');
             const range = IDBKeyRange.bound(dateRange.start, dateRange.end);
             const request = index.getAll(range);
             request.onsuccess = () => {
@@ -2203,9 +2223,14 @@ const processBookmarksResponse = (data) => {
   try {
     const entries = data?.data?.bookmark_timeline_v2?.timeline?.instructions?.[0]?.entries || [];
     
+    
     const bookmarks = entries
       .filter(entry => entry?.entryId?.startsWith('tweet-'))
       .map(entry => {
+                // DEBUG: Log sortIndex availability
+                console.log(`🥇[Fetcher] Entry ${entry?.entryId}:`, {
+                  sortIndexValue: entry?.sortIndex,
+                });
         const result = entry?.content?.itemContent?.tweet_results?.result;
         const legacy = result?.legacy;
         const user = result?.core?.user_results?.result?.legacy;
@@ -2215,6 +2240,7 @@ const processBookmarksResponse = (data) => {
           text: legacy?.full_text,
           author: user?.screen_name,
           created_at: legacy?.created_at,
+          sortIndex: entry?.sortIndex, 
           // Store full data for media extraction
           FULL_DATA: result,
         };
@@ -2246,6 +2272,7 @@ const enhanceBookmarksWithMetadata = (bookmarks) => {
       text: bookmark.text,
       author: bookmark.author,
       created_at: bookmark.created_at,
+      sortIndex: bookmark.sortIndex, // Pass through the sortIndex
       media_urls: extractMediaUrls(bookmark.FULL_DATA)
     };
     
@@ -2359,6 +2386,85 @@ const checkNextCursor = (currentCursor, nextCursor) => {
 };
 
 console.log('📡 XSaved v2 Fetcher utility loaded - ready for X.com API integration'); 
+;// ./src/utils/sortIndex-utils.ts
+/**
+ * XSaved Extension v2 - SortIndex Utilities
+ * Twitter Snowflake ID parsing and date extraction
+ */
+/**
+ * Extract date from Twitter/X sortIndex (Snowflake ID)
+ * @param {string|number|BigInt} sortIndex - The Twitter sortIndex/Snowflake ID
+ * @returns {Date} The extracted date
+ */
+function getSortIndexDate(sortIndex) {
+    // Twitter epoch: January 1, 2010 00:00:00 UTC (in milliseconds)
+    const TWITTER_EPOCH = 1288834974657;
+    try {
+        // Convert to BigInt for precise calculation
+        const id = BigInt(sortIndex);
+        // Extract timestamp (first 41 bits, shifted right by 22 bits)
+        const timestampMs = Number(id >> 22n) + TWITTER_EPOCH;
+        // Return as Date object
+        return new Date(timestampMs);
+    }
+    catch (error) {
+        throw new Error(`Invalid sortIndex: ${sortIndex}. Must be a valid number or string representing a Snowflake ID.`);
+    }
+}
+/**
+ * Get ISO string from sortIndex
+ * @param {string|number|BigInt} sortIndex - The Twitter sortIndex/Snowflake ID
+ * @returns {string} ISO date string
+ */
+function sortIndex_utils_getSortIndexDateISO(sortIndex) {
+    return getSortIndexDate(sortIndex).toISOString();
+}
+/**
+ * Get relative time string from sortIndex (e.g., "2 hours ago")
+ * @param {string|number|BigInt} sortIndex - The Twitter sortIndex/Snowflake ID
+ * @returns {string} Relative time string
+ */
+function getSortIndexRelativeTime(sortIndex) {
+    const date = getSortIndexDate(sortIndex);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const seconds = Math.floor(diffMs / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    const months = Math.floor(days / 30);
+    const years = Math.floor(days / 365);
+    if (years > 0)
+        return `${years} year${years > 1 ? 's' : ''} ago`;
+    if (months > 0)
+        return `${months} month${months > 1 ? 's' : ''} ago`;
+    if (days > 0)
+        return `${days} day${days > 1 ? 's' : ''} ago`;
+    if (hours > 0)
+        return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+    if (minutes > 0)
+        return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+    if (seconds > 0)
+        return `${seconds} second${seconds > 1 ? 's' : ''} ago`;
+    return 'just now';
+}
+/**
+ * Validate if a string/number is a valid Twitter Snowflake ID
+ * @param {string|number|bigint} sortIndex - The value to validate
+ * @returns {boolean} True if valid Snowflake ID
+ */
+function isValidSortIndex(sortIndex) {
+    try {
+        const id = BigInt(sortIndex);
+        // Twitter Snowflake IDs are 64-bit integers
+        // They should be positive and within reasonable bounds
+        return id > 0n && id < 2n ** 64n;
+    }
+    catch {
+        return false;
+    }
+}
+
 ;// ./src/extension/utils/communicator.js
 /**
  * XSaved Extension v2 - Communication Utilities
@@ -2737,6 +2843,7 @@ console.log('📡 XSaved v2 Communicator utility loaded - ready for message pass
 
 
 
+
 // ===============================
 // PROVEN SCHEDULING CONSTANTS (Keep from background.js)
 // ===============================
@@ -2849,7 +2956,7 @@ class ExtensionServiceWorker {
                     isDeltaSync,
                     timeSinceLastSync: timeSinceLastSync ? Math.round(timeSinceLastSync / 60000) + 'min' : null
                 });
-                resolve();
+                resolve(undefined);
             });
         });
     }
@@ -2937,8 +3044,8 @@ const saveBookmarkToLocal = async (bookmark, userTags = []) => {
             id: bookmark.id,
             text: bookmark.text || '',
             author: bookmark.author || '',
-            created_at: bookmark.created_at || new Date().toISOString(),
-            bookmark_timestamp: new Date().toISOString(),
+            created_at: bookmark.created_at || null,
+            bookmarked_at: bookmark.sortIndex ? sortIndex_utils_getSortIndexDateISO(bookmark.sortIndex) : null,
             tags: userTags.length > 0 ? userTags : (bookmark.tags || []),
             media_urls: bookmark.media_urls || [],
             // Add search tokenization for Component 2
@@ -3176,7 +3283,7 @@ const handleSearchBookmarks = async (query, sendResponse) => {
             // Fallback to chrome.storage.local search for testing
             console.log('🔍 Using fallback search (testing mode)');
             const result = await chrome.storage.local.get(null);
-            const bookmarks = Object.keys(result)
+            const bookmarks = Object.keys(result || {})
                 .filter(key => key.startsWith('bookmark_'))
                 .map(key => result[key])
                 .filter(bookmark => {
@@ -3340,7 +3447,7 @@ const sanitizeBookmarks = (bookmarks) => {
             text: bookmark.text,
             author: bookmark.author,
             created_at: bookmark.created_at,
-            bookmark_timestamp: bookmark.bookmark_timestamp,
+            bookmarked_at: bookmark.bookmarked_at,
             tags: Array.isArray(bookmark.tags) ? bookmark.tags : [],
             url: bookmark.url,
             // Only include safe, serializable properties
@@ -3499,7 +3606,7 @@ class InlineExportManager {
         try {
             console.log(`📊 [SW] Generating CSV for ${bookmarks.length} bookmarks`);
             const headers = [
-                'id', 'text', 'author', 'created_at', 'bookmark_timestamp',
+                'id', 'text', 'author', 'created_at', 'bookmarked_at',
                 'tags', 'url'
             ];
             const rows = bookmarks.map(bookmark => [
@@ -3507,7 +3614,7 @@ class InlineExportManager {
                 this.escapeCsvField(bookmark.text || ''),
                 bookmark.author || '',
                 bookmark.created_at || '',
-                bookmark.bookmark_timestamp || '',
+                bookmark.bookmarked_at || '',
                 (bookmark.tags || []).join(', '),
                 bookmark.url || ''
             ]);
@@ -3543,7 +3650,7 @@ class InlineExportManager {
                     text: bookmark.text,
                     author: bookmark.author,
                     created_at: bookmark.created_at,
-                    bookmark_timestamp: bookmark.bookmark_timestamp,
+                    bookmarked_at: bookmark.bookmarked_at,
                     tags: bookmark.tags || [],
                     url: bookmark.url
                 }))
@@ -3840,7 +3947,7 @@ if (typeof self !== 'undefined') {
                 text: 'Test bookmark for CRUD operations',
                 author: 'test_user',
                 created_at: new Date().toISOString(),
-                bookmark_timestamp: new Date().toISOString(),
+                bookmarked_at: new Date().toISOString(),
                 tags: ['test', 'crud'],
                 media_urls: [],
                 textTokens: ['test', 'bookmark', 'crud', 'operations']

@@ -241,14 +241,36 @@ export class XSavedDatabase {
   private async _addBookmarkInternal(bookmark: BookmarkEntity): Promise<BookmarkEntity> {
     return new Promise(async (resolve, reject) => {
       try {
+        // DEBUG: Log incoming bookmark data
+        console.log(`🔍 Database: Incoming bookmark data for ${bookmark.id}:`, {
+          hasSortIndex: !!bookmark.sortIndex,
+          sortIndexValue: bookmark.sortIndex,
+          hasBookmarkedAt: !!bookmark.bookmarked_at,
+          bookmarkedAtValue: bookmark.bookmarked_at,
+          hasCreatedAt: !!bookmark.created_at,
+          createdAtValue: bookmark.created_at,
+          allKeys: Object.keys(bookmark)
+        });
+        
         // Ensure required fields
         const bookmarkToAdd: BookmarkEntity = {
           ...bookmark,
-          bookmark_timestamp: bookmark.bookmark_timestamp || new Date().toISOString(),
+          bookmarked_at: bookmark.sortIndex ? getSortIndexDateISO(bookmark.sortIndex) : (bookmark.bookmarked_at || new Date().toISOString()),
           tags: bookmark.tags || [],
           textTokens: this._tokenizeText(bookmark.text)
         };
-
+        
+        // DEBUG: Log processed bookmark data
+        console.log(`🔧 Database: Processed bookmark entity for ${bookmark.id}:`, {
+          hasSortIndex: !!bookmark.sortIndex,
+          sortIndexValue: bookmark.sortIndex,
+          hasBookmarkedAt: !!bookmarkToAdd.bookmarked_at,
+          bookmarkedAtValue: bookmarkToAdd.bookmarked_at,
+          hasCreatedAt: !!bookmarkToAdd.created_at,
+          createdAtValue: bookmarkToAdd.created_at,
+          bookmarkedAtSource: bookmark.sortIndex ? 'sortIndex' : (bookmark.bookmarked_at ? 'bookmarked_at' : 'new Date()')
+        });
+        
         // Create transaction for both bookmarks and tags stores
         const transaction = this._createTransaction([STORES.BOOKMARKS, STORES.TAGS], 'readwrite');
         const bookmarksStore = transaction.objectStore(STORES.BOOKMARKS);

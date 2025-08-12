@@ -92,7 +92,7 @@ export class ExportManagerSW {
       console.log(`📊 [SW] Generating CSV for ${bookmarks.length} bookmarks`);
 
       const headers = [
-        'id', 'text', 'author', 'author_id', 'created_at', 'bookmark_timestamp',
+        'id', 'text', 'author', 'author_id', 'created_at', 'bookmarked_at',
         'tags', 'likes', 'retweets', 'replies', 'url', 'media_urls',
         'is_quote', 'is_reply'
       ];
@@ -103,7 +103,7 @@ export class ExportManagerSW {
         this.escapeCsvField(bookmark.author),
         this.escapeCsvField(bookmark.author_id),
         this.escapeCsvField(bookmark.created_at),
-        this.escapeCsvField(bookmark.bookmark_timestamp),
+        this.escapeCsvField(bookmark.bookmarked_at),
         this.escapeCsvField(bookmark.tags?.join('; ') || ''),
         bookmark.likes?.toString() || '0',
         bookmark.retweets?.toString() || '0',
@@ -294,7 +294,7 @@ export class ExportManagerSW {
       },
       timestamps: {
         created_at: bookmark.created_at,
-        bookmarked_at: bookmark.bookmark_timestamp
+        bookmarked_at: bookmark.bookmarked_at
       },
       engagement: {
         likes: bookmark.likes || 0,

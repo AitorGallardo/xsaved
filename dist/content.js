@@ -474,7 +474,7 @@ class XSavedContentScript {
     // Get recent bookmarks from service worker
     safeRuntimeMessage({ 
       action: 'searchBookmarks', 
-      query: { text: '', limit: 50, sortBy: 'created_at', sortOrder: 'desc' }
+      query: { text: '', limit: 10000, sortBy: 'created_at', sortOrder: 'desc' }
     }, (response) => {
       if (response?.success) {
         let bookmarks = [];
@@ -497,8 +497,8 @@ class XSavedContentScript {
         
         // Sort bookmarks by created_at descending (newest first) as a fallback
         bookmarks.sort((a, b) => {
-          const aDate = new Date(a.created_at || a.bookmark_timestamp || 0);
-          const bDate = new Date(b.created_at || b.bookmark_timestamp || 0);
+          const aDate = new Date(a.bookmarked_at || 0);
+          const bDate = new Date(b.bookmarked_at || 0);
           return bDate.getTime() - aDate.getTime();
         });
         
@@ -836,7 +836,7 @@ class XSavedContentScript {
       author: bookmark?.author || 'unknown',
       tags: bookmark?.tags || [],
       media_urls: bookmark?.media_urls || [],
-      bookmark_timestamp: bookmark?.bookmark_timestamp || bookmark?.created_at || new Date().toISOString()
+      bookmarked_at: bookmark?.bookmarked_at || bookmark?.created_at || new Date().toISOString()
     };
 
     const card = document.createElement('div');
@@ -1305,7 +1305,7 @@ class XSavedContentScript {
       font-size: 14px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     `;
-    timestamp.textContent = new Date(tweet.bookmark_timestamp).toLocaleString();
+    timestamp.textContent = new Date(tweet.bookmarked_at).toLocaleString();
 
     // Assemble modal
     modalContent.appendChild(closeButton);
@@ -1381,7 +1381,7 @@ class XSavedContentScript {
     // Helper function to group bookmarks by month/year (same as in renderBookmarksGrid)
     const groupBookmarksByDate = (bookmarks) => {
       const grouped = bookmarks.reduce((acc, bookmark) => {
-        const date = new Date(bookmark.bookmark_timestamp || bookmark.created_at);
+        const date = new Date(bookmark.bookmarked_at || bookmark.created_at);
         const monthYear = `${date.getFullYear()}-${date.getMonth()}`;
         
         if (!acc[monthYear]) {
@@ -1701,7 +1701,7 @@ class XSavedContentScript {
     // Method 2: Look for data attributes
     const dataId = tweetContainer.getAttribute('data-tweet-id') || 
                    tweetContainer.getAttribute('data-testid');
-    if (dataId && /^\d+$/.test(dataId)) {
+    if (dataId && /^\d+/.test(dataId)) {
       return dataId;
     }
 
@@ -1716,6 +1716,8 @@ class XSavedContentScript {
 
     return null;
   }
+
+
 
   extractMediaUrls(tweetContainer) {
     const media_urls = [];
@@ -2276,12 +2278,11 @@ class XSavedContentScript {
     saveButton.disabled = true;
     saveButton.style.opacity = '0.7';
 
-    // Create bookmark entity
-    const bookmarkEntity = {
-      ...tweetData,
-      tags,
-      bookmark_timestamp: new Date().toISOString()
-    };
+          // Create bookmark entity - let service worker handle sortIndex parsing
+      const bookmarkEntity = {
+        ...tweetData,
+        tags
+      };
 
     // Send to service worker
     safeRuntimeMessage({
