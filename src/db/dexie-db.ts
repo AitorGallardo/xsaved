@@ -34,7 +34,7 @@ export class XSavedDexieDB extends Dexie {
         id,
         author,
         created_at,
-        src/extension/,
+        bookmarked_at
         *tags,
         *textTokens
       `,
