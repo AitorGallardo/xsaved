@@ -36,7 +36,10 @@ export class QueryParser {
         estimatedResultCount: 0,
         estimatedExecutionTime: 0
       },
-      originalQuery: query
+      originalQuery: query,
+      sortBy: query.sortBy || 'relevance',
+      sortOrder: query.sortOrder || 'desc',
+      limit: query.limit || 50
     };
 
     // Parse text input

@@ -48,9 +48,13 @@ export class SearchExecutor {
         );
       } else {
         // No filters - get recent bookmarks as starting point
-        const recentResult = await db.getRecentBookmarks({ limit: 1000 });
+        const sortBy = parsedQuery.sortBy === 'created_at' ? 'created_at' : 'bookmarked_at';
+        const recentResult = await db.getRecentBookmarks({ 
+          limit: parsedQuery.limit || 2000,
+          sortBy: sortBy
+        });
         candidateBookmarks = recentResult.data || [];
-        analytics.indexesUsed.push('bookmarked_at');
+        analytics.indexesUsed.push(sortBy);
       }
 
       // Apply secondary filters
@@ -88,6 +92,16 @@ export class SearchExecutor {
       const queryTime = performance.now() - startTime;
       analytics.queryTime = queryTime;
       analytics.resultsReturned = candidateBookmarks.length;
+
+      // Apply final sorting
+      if (parsedQuery.sortBy && parsedQuery.sortBy !== 'relevance') {
+        candidateBookmarks = this.applySorting(candidateBookmarks, parsedQuery.sortBy, parsedQuery.sortOrder);
+      }
+
+      // Apply limit after sorting
+      if (parsedQuery.limit && candidateBookmarks.length > parsedQuery.limit) {
+        candidateBookmarks = candidateBookmarks.slice(0, parsedQuery.limit);
+      }
 
       // Log slow operations
       if (queryTime > this.config.performanceTargets.combinedSearch) {
@@ -425,6 +439,33 @@ export class SearchExecutor {
     }
 
     return union;
+  }
+
+  /**
+   * Apply sorting to bookmarks
+   */
+  private applySorting(bookmarks: BookmarkEntity[], sortBy: string, sortOrder?: 'asc' | 'desc'): BookmarkEntity[] {
+    const isAscending = sortOrder === 'asc';
+    
+    return bookmarks.sort((a, b) => {
+      let comparison = 0;
+      
+      switch (sortBy) {
+        case 'created_at':
+          comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          break;
+        case 'bookmarked_at':
+          comparison = new Date(a.bookmarked_at).getTime() - new Date(b.bookmarked_at).getTime();
+          break;
+        case 'author':
+          comparison = a.author.localeCompare(b.author);
+          break;
+        default:
+          return 0; // No sorting
+      }
+      
+      return isAscending ? comparison : -comparison;
+    });
   }
 
   /**

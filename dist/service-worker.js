@@ -1153,7 +1153,10 @@ class QueryParser {
                 estimatedResultCount: 0,
                 estimatedExecutionTime: 0
             },
-            originalQuery: query
+            originalQuery: query,
+            sortBy: query.sortBy || 'relevance',
+            sortOrder: query.sortOrder || 'desc',
+            limit: query.limit || 50
         };
         // Parse text input
         if (query.text) {
@@ -1429,9 +1432,13 @@ class SearchExecutor {
             }
             else {
                 // No filters - get recent bookmarks as starting point
-                const recentResult = await db.getRecentBookmarks({ limit: 1000 });
+                const sortBy = parsedQuery.sortBy === 'created_at' ? 'created_at' : 'bookmarked_at';
+                const recentResult = await db.getRecentBookmarks({
+                    limit: parsedQuery.limit || 2000,
+                    sortBy: sortBy
+                });
                 candidateBookmarks = recentResult.data || [];
-                analytics.indexesUsed.push('bookmarked_at');
+                analytics.indexesUsed.push(sortBy);
             }
             // Apply secondary filters
             for (const filter of parsedQuery.queryPlan.secondaryFilters) {
@@ -1452,6 +1459,14 @@ class SearchExecutor {
             const queryTime = performance.now() - startTime;
             analytics.queryTime = queryTime;
             analytics.resultsReturned = candidateBookmarks.length;
+            // Apply final sorting
+            if (parsedQuery.sortBy && parsedQuery.sortBy !== 'relevance') {
+                candidateBookmarks = this.applySorting(candidateBookmarks, parsedQuery.sortBy, parsedQuery.sortOrder);
+            }
+            // Apply limit after sorting
+            if (parsedQuery.limit && candidateBookmarks.length > parsedQuery.limit) {
+                candidateBookmarks = candidateBookmarks.slice(0, parsedQuery.limit);
+            }
             // Log slow operations
             if (queryTime > this.config.performanceTargets.combinedSearch) {
                 analytics.slowOperations.push(`Total query: ${queryTime.toFixed(2)}ms`);
@@ -1714,6 +1729,29 @@ class SearchExecutor {
             }
         }
         return union;
+    }
+    /**
+     * Apply sorting to bookmarks
+     */
+    applySorting(bookmarks, sortBy, sortOrder) {
+        const isAscending = sortOrder === 'asc';
+        return bookmarks.sort((a, b) => {
+            let comparison = 0;
+            switch (sortBy) {
+                case 'created_at':
+                    comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+                    break;
+                case 'bookmarked_at':
+                    comparison = new Date(a.bookmarked_at).getTime() - new Date(b.bookmarked_at).getTime();
+                    break;
+                case 'author':
+                    comparison = a.author.localeCompare(b.author);
+                    break;
+                default:
+                    return 0; // No sorting
+            }
+            return isAscending ? comparison : -comparison;
+        });
     }
     /**
      * Get performance target for filter type
