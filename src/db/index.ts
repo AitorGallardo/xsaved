@@ -3,8 +3,8 @@
  * Main exports for the data layer
  */
 
-// Main database class
-export { XSavedDatabase, db } from './database';
+// Main database class (using Dexie.js wrapper)
+export { XSavedDatabase, db } from './database-dexie';
 
 // Type definitions
 export type {

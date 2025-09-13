@@ -142,14 +142,9 @@ export const processBookmarksResponse = (data) => {
   try {
     const entries = data?.data?.bookmark_timeline_v2?.timeline?.instructions?.[0]?.entries || [];
     
-    
     const bookmarks = entries
       .filter(entry => entry?.entryId?.startsWith('tweet-'))
       .map(entry => {
-                // DEBUG: Log sortIndex availability
-                console.log(`🥇[Fetcher] Entry ${entry?.entryId}:`, {
-                  sortIndexValue: entry?.sortIndex,
-                });
         const result = entry?.content?.itemContent?.tweet_results?.result;
         const legacy = result?.legacy;
         const user = result?.core?.user_results?.result?.legacy;

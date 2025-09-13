@@ -225,6 +225,12 @@ export class SearchEngine {
    * Cache search result
    */
   private cacheResult(cacheKey: string, result: SearchResult): void {
+    // Don't cache empty results to avoid stale empty cache issues
+    if (result.bookmarks.length === 0) {
+      console.log('🚫 Not caching empty result to prevent stale cache');
+      return;
+    }
+    
     // Implement LRU cache eviction if cache is full
     if (this.queryCache.size >= this.config.caching.maxCacheSize) {
       // Remove oldest entry

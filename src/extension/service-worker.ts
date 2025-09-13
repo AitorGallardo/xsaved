@@ -493,6 +493,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     case "exportBookmarks":
       handleExportBookmarks(request.bookmarks, request.options, sendResponse);
       return true;
+      
+    case "clearCache":
+      handleClearCache(sendResponse);
+      return true;
   }
 });
 
@@ -687,6 +691,23 @@ const handleExportBookmarks = async (bookmarks, options, sendResponse) => {
       success: false,
       error: error.message || 'Export failed'
     });
+  }
+};
+
+const handleClearCache = async (sendResponse) => {
+  try {
+    await serviceWorker.initialize();
+    
+    if (serviceWorker.searchEngine) {
+      serviceWorker.searchEngine.clearCache();
+      console.log('🧹 Search cache cleared via service worker');
+      sendResponse({ success: true, message: 'Cache cleared successfully' });
+    } else {
+      sendResponse({ success: false, error: 'Search engine not initialized' });
+    }
+  } catch (error) {
+    console.error('Error clearing cache:', error);
+    sendResponse({ success: false, error: error.message });
   }
 };
 

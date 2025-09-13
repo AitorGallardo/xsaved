@@ -232,7 +232,7 @@ export class SearchExecutor {
 
       case 'textToken':
         filtered = bookmarks.filter(bookmark =>
-          bookmark.textTokens?.includes(filter.value) ||
+          bookmark.textTokens.includes(filter.value) ||
           bookmark.text.toLowerCase().includes(filter.value)
         );
         break;
@@ -368,7 +368,7 @@ export class SearchExecutor {
 
     const filtered = bookmarks.filter(bookmark => {
       // Check if bookmark contains any of the search tokens
-      const bookmarkTokens = bookmark.textTokens || [];
+      const bookmarkTokens = bookmark.textTokens;
       const bookmarkText = bookmark.text.toLowerCase();
       
       return tokens.some(token => 

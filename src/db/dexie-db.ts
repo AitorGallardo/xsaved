@@ -22,7 +22,7 @@ export class XSavedDexieDB extends Dexie {
   tags!: Table<TagEntity, string>;
   collections!: Table<CollectionEntity, string>;
   settings!: Table<SettingsEntity, string>;
-  searchIndex!: Table<SearchIndexEntry, [string, string]>; // [bookmarkId, token]
+  searchIndex!: Table<SearchIndexEntry, string>; // bookmarkId as primary key
 
   constructor() {
     super('XSavedDB');
@@ -34,7 +34,7 @@ export class XSavedDexieDB extends Dexie {
         id,
         author,
         created_at,
-        bookmarked_at
+        bookmarked_at,
         *tags,
         *textTokens
       `,
@@ -64,10 +64,10 @@ export class XSavedDexieDB extends Dexie {
       
       // Search Index: Full-text search optimization
       searchIndex: `
-        [bookmarkId+token],
         bookmarkId,
-        token,
-        frequency
+        *tokens,
+        relevanceScore,
+        lastUpdated
       `
     });
 

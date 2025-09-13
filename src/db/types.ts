@@ -26,7 +26,7 @@ export interface BookmarkEntity {
   media_urls?: string[];                // Direct media URLs, no variants
   
   // Search optimization (auto-generated)
-  textTokens?: string[];                // For full-text search index
+  textTokens: string[];                // For full-text search index
 }
 
 // Search index entry for performance optimization
