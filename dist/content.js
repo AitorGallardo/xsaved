@@ -112,20 +112,477 @@ class XSavedContentScript {
   initializeBookmarksPage() {
     console.log('🔖 Initializing bookmarks page features...');
     
-    // Wait for Twitter SPA to fully load the bookmarks content
-    this.waitForBookmarksPageLoad().then(() => {
-      // Add toggle button to switch between default and grid view
-      this.addBookmarksPageToggle();
-    });
+    // Set up mutation observer to wait for exact bookmarks content to load
+    this.setupBookmarksContentObserver();
     
     // Listen for bookmark data changes
     this.setupBookmarksPageObserver();
   }
 
+  setupBookmarksContentObserver() {
+    console.log('🔍 Setting up bookmarks content observer...');
+    
+    // Check if toggle already exists
+    if (document.getElementById('xsaved-bookmarks-toggle')) {
+      console.log('⚠️ Bookmarks toggle already exists, skipping observer setup');
+      return;
+    }
+    
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+          // Check if any added nodes contain bookmarks page structure (NOT messages drawer)
+          const hasBookmarksHeader = Array.from(mutation.addedNodes).some(node => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const element = node;
+              
+              // Look for h2 elements in the added nodes
+              const h2Elements = element.querySelectorAll ? 
+                Array.from(element.querySelectorAll('h2')) : 
+                (element.tagName === 'H2' ? [element] : []);
+              
+              if (h2Elements.length === 0) return false;
+              
+              // NUCLEAR PREVENTION: Only allow h2 elements that are DEFINITELY in bookmarks page
+              return h2Elements.some(h2 => {
+                console.log('🔍 STRICT VALIDATION for h2:', h2.textContent);
+                
+                // STEP 1: ABSOLUTE BLACKLIST - Messages drawer
+                const isInMessagesDrawer = h2.closest('[data-testid="DMDrawer"]') || 
+                                          h2.closest('[data-testid="DMDrawerHeader"]');
+                
+                if (isInMessagesDrawer) {
+                  console.log('🚫 BLOCKED: h2 in messages drawer:', h2.textContent);
+                  return false;
+                }
+                
+                // STEP 2: WHITELIST VALIDATION - Must have bookmarks page indicators
+                const hasBackButton = document.querySelector('[data-testid="app-bar-back"]');
+                const isInPrimaryColumn = h2.closest('[data-testid="primaryColumn"]');
+                const isInMainContent = h2.closest('main') || h2.closest('[role="main"]');
+                
+                // STEP 3: CONTAINER STRUCTURE VALIDATION
+                const container = h2.closest('div.css-175oi2r.r-1habvwh');
+                const containerNotInMessagesDrawer = container && !container.closest('[data-testid="DMDrawer"]');
+                
+                // STEP 4: ADDITIONAL SAFETY CHECKS
+                const hasCorrectParentStructure = h2.parentElement && 
+                                                 h2.parentElement.classList.contains('css-175oi2r');
+                
+                // STEP 5: FINAL VALIDATION - All conditions must be true
+                const isValid = hasBackButton && // Must have back button (bookmarks page indicator)
+                               (isInPrimaryColumn || isInMainContent) && // Must be in main content
+                               containerNotInMessagesDrawer && // Container must not be in messages drawer
+                               hasCorrectParentStructure; // Must have correct parent structure
+                
+                console.log('🔍 STRICT VALIDATION RESULTS:');
+                console.log('  - Has back button (REQUIRED):', !!hasBackButton);
+                console.log('  - In primary column:', !!isInPrimaryColumn);
+                console.log('  - In main content:', !!isInMainContent);
+                console.log('  - Container not in messages drawer:', !!containerNotInMessagesDrawer);
+                console.log('  - Has correct parent structure:', !!hasCorrectParentStructure);
+                console.log('  - FINAL RESULT:', isValid);
+                
+                if (!isValid) {
+                  console.log('🚫 BLOCKED: h2 failed strict validation:', h2.textContent);
+                }
+                
+                return isValid;
+              });
+            }
+            return false;
+          });
+          
+          if (hasBookmarksHeader && XSAVED_CONFIG.pages.isBookmarksPage()) {
+            console.log('🎯 Detected bookmarks header content, attempting toggle placement...');
+            
+            // Small delay to ensure DOM is stable
+            setTimeout(() => {
+              this.attemptBookmarksTogglePlacement();
+            }, 100);
+          }
+        }
+      });
+    });
+    
+    // Observe the entire document for changes
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+    
+    // Also try immediately in case content is already loaded
+    setTimeout(() => {
+      this.attemptBookmarksTogglePlacement();
+    }, 500);
+    
+    // Clean up observer after 30 seconds to avoid memory leaks
+    setTimeout(() => {
+      observer.disconnect();
+      console.log('🧹 Cleaned up bookmarks content observer');
+    }, 30000);
+  }
+
+  attemptBookmarksTogglePlacement() {
+    console.log('🎯 Attempting bookmarks toggle placement...');
+    
+    // Check if toggle already exists
+    if (document.getElementById('xsaved-bookmarks-toggle')) {
+      console.log('⚠️ Toggle already exists, skipping placement');
+      return;
+    }
+    
+    // Try to find the exact bookmarks page structure
+    const bookmarksHeader = this.findBookmarksHeader();
+    
+    if (bookmarksHeader.header && bookmarksHeader.container) {
+      console.log('✅ Found proper bookmarks structure, placing toggle...');
+      this.placeBookmarksToggle(bookmarksHeader.header, bookmarksHeader.container);
+    } else {
+      console.log('⏳ Bookmarks structure not ready yet, will retry...');
+    }
+  }
+
+  findBookmarksHeader() {
+    console.log('🔍 Searching for bookmarks header using structural selectors...');
+    
+    // Strategy 1: Look for h2 with back button (most reliable indicator of bookmarks page)
+    const backButton = document.querySelector('[data-testid="app-bar-back"]');
+    if (backButton) {
+      console.log('✅ Found back button, looking for nearby h2...');
+      
+      // Find h2 in the same container structure as the back button
+      const h2WithBackButton = backButton.closest('div').querySelector('h2');
+      if (h2WithBackButton) {
+        // NUCLEAR SAFETY: Triple-check it's NOT in messages drawer
+        const isInMessagesDrawer = h2WithBackButton.closest('[data-testid="DMDrawer"]') ||
+                                  h2WithBackButton.closest('[data-testid="DMDrawerHeader"]');
+        
+        if (!isInMessagesDrawer) {
+          console.log('✅ VALIDATED: Found bookmarks header via back button:', h2WithBackButton.textContent);
+          console.log('✅ Header path:', this.getElementPath(h2WithBackButton));
+          
+          const container = this.findProperContainer(h2WithBackButton);
+          if (container) {
+            return { header: h2WithBackButton, container };
+          } else {
+            console.log('🚫 Container validation failed for back button header');
+          }
+        } else {
+          console.log('🚫 BLOCKED: Back button h2 is in messages drawer!');
+        }
+      }
+    }
+    
+    // Strategy 2: Look for h2 in primary column that's NOT in messages drawer
+    const primaryColumn = document.querySelector('[data-testid="primaryColumn"]');
+    if (primaryColumn) {
+      const headers = primaryColumn.querySelectorAll('h2');
+      for (const h2 of headers) {
+        console.log('🔍 Checking h2 in primaryColumn:', h2.textContent);
+        
+        // Exclude messages drawer
+        const isInMessagesDrawer = h2.closest('[data-testid="DMDrawer"]') || 
+                                  h2.closest('[data-testid="DMDrawerHeader"]');
+        
+        if (!isInMessagesDrawer) {
+          // Check if it's in the correct container structure
+          const isInCorrectContainer = h2.closest('div.css-175oi2r.r-1habvwh');
+          
+          if (isInCorrectContainer) {
+            console.log('✅ Found bookmarks header in primary column:', h2.textContent);
+            const container = this.findProperContainer(h2);
+            return { header: h2, container };
+          }
+        } else {
+          console.log('🚫 Skipping h2 in messages drawer:', h2.textContent);
+        }
+      }
+    }
+    
+    // Strategy 3: Look for h2 in main content areas, excluding messages drawer
+    const mainContentSelectors = ['main', '[role="main"]'];
+    for (const selector of mainContentSelectors) {
+      const mainContent = document.querySelector(selector);
+      if (mainContent) {
+        const headers = mainContent.querySelectorAll('h2');
+        for (const h2 of headers) {
+          console.log('🔍 Checking h2 in main content:', h2.textContent);
+          
+          // Exclude messages drawer
+          const isInMessagesDrawer = h2.closest('[data-testid="DMDrawer"]') || 
+                                    h2.closest('[data-testid="DMDrawerHeader"]');
+          
+          if (!isInMessagesDrawer) {
+            // Check if it's in the correct container structure
+            const isInCorrectContainer = h2.closest('div.css-175oi2r.r-1habvwh');
+            
+            if (isInCorrectContainer) {
+              console.log('✅ Found bookmarks header in main content:', h2.textContent);
+              const container = this.findProperContainer(h2);
+              return { header: h2, container };
+            }
+          } else {
+            console.log('🚫 Skipping h2 in messages drawer:', h2.textContent);
+          }
+        }
+      }
+    }
+    
+    console.log('❌ No suitable bookmarks header found');
+    console.log('🔍 Available h2 elements:');
+    document.querySelectorAll('h2').forEach((h2, index) => {
+      const isInMessagesDrawer = h2.closest('[data-testid="DMDrawer"]');
+      console.log(`  ${index + 1}: "${h2.textContent}" (Messages drawer: ${!!isInMessagesDrawer})`);
+    });
+    
+    return { header: null, container: null };
+  }
+
+  findProperContainer(header) {
+    console.log('🔍 Finding proper container for header:', header.textContent);
+    
+    // CRITICAL: Ensure we're not in messages drawer
+    const isInMessagesDrawer = header.closest('[data-testid="DMDrawer"]') || 
+                              header.closest('[data-testid="DMDrawerHeader"]');
+    
+    if (isInMessagesDrawer) {
+      console.log('🚫 Header is in messages drawer, aborting container search');
+      return null;
+    }
+    
+    // Strategy 1: Find the immediate parent container with the specific CSS classes
+    // This is the div that directly contains the h2 and where we want to place the toggle
+    let container = header.closest('div.css-175oi2r.r-1habvwh');
+    if (container) {
+      // Double-check this container is not in messages drawer
+      const containerInMessagesDrawer = container.closest('[data-testid="DMDrawer"]');
+      if (!containerInMessagesDrawer) {
+        console.log('📍 Found direct parent container with CSS classes (verified not in messages drawer)');
+        console.log('📍 Container classes:', container.className);
+        console.log('📍 Container contains h2:', !!container.querySelector('h2'));
+        return container;
+      } else {
+        console.log('🚫 Container is in messages drawer, skipping');
+      }
+    }
+    
+    // Strategy 2: Look for parent element that can be styled with flexbox
+    container = header.parentElement;
+    if (container && container.tagName === 'DIV') {
+      const containerInMessagesDrawer = container.closest('[data-testid="DMDrawer"]');
+      if (!containerInMessagesDrawer) {
+        console.log('📍 Using direct parent div container (verified not in messages drawer)');
+        console.log('📍 Parent container classes:', container.className);
+        return container;
+      } else {
+        console.log('🚫 Parent container is in messages drawer, skipping');
+      }
+    }
+    
+    // Strategy 3: Fallback to primaryColumn (less ideal as it's too broad)
+    container = header.closest('[data-testid="primaryColumn"]');
+    if (container) {
+      console.log('⚠️ Using broad primaryColumn container (fallback)');
+      return container;
+    }
+    
+    // Strategy 4: Last resort - main content area
+    container = header.closest('main');
+    if (container) {
+      console.log('⚠️ Using main container (last resort)');
+      return container;
+    }
+    
+    // Final fallback
+    console.log('⚠️ Using header parent element as final fallback');
+    return header.parentElement;
+  }
+
+  placeBookmarksToggle(header, container) {
+    console.log('🎯 Attempting to place toggle next to header:', header.textContent);
+    
+    // ABSOLUTE PREVENTION: Triple-check we're not in messages drawer
+    const isHeaderInMessagesDrawer = header.closest('[data-testid="DMDrawer"]') || 
+                                    header.closest('[data-testid="DMDrawerHeader"]');
+    
+    const isContainerInMessagesDrawer = container.closest('[data-testid="DMDrawer"]') || 
+                                       container.closest('[data-testid="DMDrawerHeader"]');
+    
+    if (isHeaderInMessagesDrawer || isContainerInMessagesDrawer) {
+      console.error('🚫 BLOCKED: Attempted to place toggle in messages drawer!');
+      console.error('🚫 Header in messages drawer:', isHeaderInMessagesDrawer);
+      console.error('🚫 Container in messages drawer:', isContainerInMessagesDrawer);
+      console.error('🚫 Header path:', this.getElementPath(header));
+      console.error('🚫 Container path:', this.getElementPath(container));
+      return; // ABORT COMPLETELY
+    }
+    
+    // WHITELIST VALIDATION: Only allow placement in verified bookmarks page structure
+    const hasBackButton = document.querySelector('[data-testid="app-bar-back"]');
+    const isInPrimaryColumn = header.closest('[data-testid="primaryColumn"]');
+    
+    if (!hasBackButton && !isInPrimaryColumn) {
+      console.error('🚫 BLOCKED: No back button and not in primary column - not bookmarks page!');
+      return; // ABORT COMPLETELY
+    }
+    
+    // FINAL VALIDATION: Check container structure
+    const containerHasCorrectStructure = container.classList.contains('css-175oi2r') && 
+                                        container.classList.contains('r-1habvwh');
+    
+    if (!containerHasCorrectStructure) {
+      console.error('🚫 BLOCKED: Container does not have correct CSS structure!');
+      console.error('🚫 Container classes:', container.className);
+      return; // ABORT COMPLETELY
+    }
+    
+    console.log('✅ VALIDATED: Safe to place toggle');
+    console.log('✅ Header path:', this.getElementPath(header));
+    console.log('✅ Container path:', this.getElementPath(container));
+    
+    // Create toggle container
+    const toggleContainer = document.createElement('div');
+    toggleContainer.id = 'xsaved-bookmarks-toggle';
+    toggleContainer.style.cssText = `
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: 16px;
+      padding: 6px 12px;
+      background: rgba(29, 161, 242, 0.1);
+      border: 1px solid rgba(29, 161, 242, 0.3);
+      border-radius: 16px;
+      font-size: 13px;
+      font-weight: 500;
+      color: rgb(29, 161, 242);
+      transition: all 0.2s ease;
+      cursor: pointer;
+      vertical-align: middle;
+      position: relative;
+      z-index: 1000;
+    `;
+    
+    // Create toggle switch
+    const toggleSwitch = document.createElement('label');
+    toggleSwitch.style.cssText = `
+      position: relative;
+      display: inline-block;
+      width: 50px;
+      height: 24px;
+      cursor: pointer;
+    `;
+    
+    const toggleInput = document.createElement('input');
+    toggleInput.type = 'checkbox';
+    toggleInput.style.opacity = '0';
+    toggleInput.checked = false;
+    
+    const toggleSlider = document.createElement('span');
+    toggleSlider.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      border-radius: 24px;
+      transition: 0.4s;
+    `;
+    
+    const toggleDot = document.createElement('span');
+    toggleDot.style.cssText = `
+      position: absolute;
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      border-radius: 50%;
+      transition: 0.4s;
+    `;
+    
+    toggleSwitch.appendChild(toggleInput);
+    toggleSwitch.appendChild(toggleSlider);
+    toggleSlider.appendChild(toggleDot);
+    
+    // Create label text
+    const labelText = document.createElement('span');
+    labelText.textContent = 'XSaved Grid';
+    labelText.style.fontWeight = '600';
+    
+    // Create stats indicator
+    const statsIndicator = document.createElement('span');
+    statsIndicator.style.cssText = `
+      background: rgba(29, 161, 242, 0.2);
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 600;
+    `;
+    statsIndicator.textContent = this.stats ? `${this.stats.totalBookmarks} saved` : 'Loading...';
+    
+    // Add toggle event
+    toggleInput.addEventListener('change', (e) => {
+      const isActive = e.target.checked;
+      labelText.textContent = isActive ? 'XSaved Grid' : 'Default View';
+      toggleSlider.style.backgroundColor = isActive ? '#1DA1F2' : '#ccc';
+      toggleDot.style.left = isActive ? '27px' : '3px';
+      
+      this.toggleGridMode(isActive);
+    });
+    
+    // Assemble toggle
+    toggleContainer.appendChild(labelText);
+    toggleContainer.appendChild(toggleSwitch);
+    toggleContainer.appendChild(statsIndicator);
+    
+    // Style the container to use flexbox layout
+    container.style.cssText = `
+      display: flex;
+      align-items: center;
+      flex-direction: row;
+      gap: 16px;
+    `;
+    
+    // Insert toggle inside the container, right after the h2 header
+    header.style.display = 'inline-block';
+    header.insertAdjacentElement('afterend', toggleContainer);
+    
+    console.log('✅ Successfully placed bookmarks toggle');
+  }
+
+  getElementPath(element) {
+    const path = [];
+    let current = element;
+    
+    while (current && current !== document.body) {
+      let selector = current.tagName.toLowerCase();
+      
+      if (current.id) {
+        selector += `#${current.id}`;
+      }
+      
+      if (current.className) {
+        const classes = current.className.split(' ').slice(0, 3); // First 3 classes only
+        selector += '.' + classes.join('.');
+      }
+      
+      if (current.hasAttribute('data-testid')) {
+        selector += `[data-testid="${current.getAttribute('data-testid')}"]`;
+      }
+      
+      path.unshift(selector);
+      current = current.parentElement;
+    }
+    
+    return path.join(' > ');
+  }
+
   async waitForBookmarksPageLoad() {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       let attempts = 0;
-      const maxAttempts = 10; // Maximum 5 seconds (10 * 500ms)
+      const maxAttempts = 20; // Increased to 10 seconds (20 * 500ms)
       
       const checkForContent = () => {
         attempts++;
@@ -155,6 +612,18 @@ class XSavedContentScript {
               const text = h.textContent ? h.textContent.toLowerCase() : '';
               return text.includes('bookmark') || text.includes('saved') || text === 'bookmarks';
             });
+          },
+          // Strategy 4: Look for any content that indicates bookmarks page is loading
+          () => {
+            const currentUrl = window.location.pathname;
+            if (currentUrl.includes('/bookmarks') || currentUrl.includes('/i/bookmarks')) {
+              // Only proceed if we can find some bookmarks-specific content, not just any main element
+              const bookmarksContent = document.querySelector('[data-testid="primaryColumn"] h2') ||
+                                     document.querySelector('main h2') ||
+                                     document.querySelector('[role="main"] h2');
+              return bookmarksContent;
+            }
+            return null;
           }
         ];
         
@@ -163,15 +632,15 @@ class XSavedContentScript {
           foundHeader = strategy();
           if (foundHeader) {
             console.log(`✅ Bookmarks page content detected using strategy, proceeding with toggle placement`);
-            console.log('📍 Found header text:', foundHeader.textContent);
+            console.log('📍 Found header text:', foundHeader.textContent || 'URL-based detection');
             resolve();
             return;
           }
         }
         
         if (attempts >= maxAttempts) {
-          console.warn(`⚠️ Bookmarks page content detection timed out after ${maxAttempts} attempts. Proceeding anyway...`);
-          resolve(); // Proceed anyway to avoid infinite loop
+          console.warn(`⚠️ Bookmarks page content detection timed out after ${maxAttempts} attempts.`);
+          reject(new Error('Bookmarks page content not detected'));
           return;
         }
         
@@ -183,175 +652,110 @@ class XSavedContentScript {
     });
   }
 
-  addBookmarksPageToggle() {
-    // Debug current DOM state
-    this.debugDOMState();
+
+
+  tryAlternativeTogglePlacement() {
+    console.log('🔧 Trying alternative toggle placement strategies...');
     
-    // Strategy 1: Try to find the specific h2 header directly
-    let header = document.querySelector(XSAVED_CONFIG.selectors.bookmarksPageHeader);
-    let container = null;
+    // Strategy 1: Try to find any main content area
+    const mainContent = document.querySelector('main') || 
+                       document.querySelector('[data-testid="primaryColumn"]') ||
+                       document.querySelector('[role="main"]');
     
-    if (header) {
-      console.log('✅ Found bookmarks header directly:', header.textContent);
-      // Get the parent container for proper placement
-      container = header.closest('div.css-175oi2r.r-1habvwh') || header.parentElement;
-    } else {
-      console.warn('⚠️ Specific header not found, trying fallback strategy...');
+    if (mainContent) {
+      console.log('📍 Found main content area, attempting placement...');
       
-      // Strategy 2: Fallback - find container and then h2 within it
-      container = document.querySelector(XSAVED_CONFIG.selectors.bookmarksContainer);
-      if (container) {
-        header = container.querySelector('h2[dir="ltr"]');
-        if (header) {
-          console.log('✅ Found header via fallback strategy:', header.textContent);
-        }
-      }
+      // Create a simple toggle container
+      const toggleContainer = document.createElement('div');
+      toggleContainer.id = 'xsaved-bookmarks-toggle';
+      toggleContainer.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 10000;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        background: rgba(29, 161, 242, 0.9);
+        border: 1px solid rgba(29, 161, 242, 1);
+        border-radius: 20px;
+        font-size: 14px;
+        font-weight: 500;
+        color: white;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      `;
       
-      // Strategy 3: Look for any h2 that could be the bookmarks header
-      if (!header) {
-        const allH2s = document.querySelectorAll('h2');
-        Array.from(allH2s).forEach((h2, index) => {
-          console.log(`H2 ${index + 1}:`, h2.textContent, h2.className);
-          if (h2.textContent && h2.textContent.toLowerCase().includes('bookmark')) {
-            header = h2;
-            container = h2.closest('div') || h2.parentElement;
-            console.log('✅ Found header via text search strategy:', header.textContent);
-          }
-        });
-      }
-    }
-
-    if (!header || !container) {
-      console.warn('❌ Could not find bookmarks page header or container. Retrying...');
-      setTimeout(() => this.addBookmarksPageToggle(), 1000); // Retry after 1 second
-      return;
-    }
-
-    // Check if toggle already exists
-    if (document.getElementById('xsaved-bookmarks-toggle')) {
-      console.log('⚠️ Bookmarks toggle already exists');
-      return;
-    }
-
-    console.log('✅ Ready to place toggle. Header text:', header.textContent, 'Container:', container.tagName);
-
-    // Create toggle container
-    const toggleContainer = document.createElement('div');
-    toggleContainer.id = 'xsaved-bookmarks-toggle';
-    toggleContainer.style.cssText = `
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      margin-left: 16px;
-      padding: 6px 12px;
-      background: rgba(29, 161, 242, 0.1);
-      border: 1px solid rgba(29, 161, 242, 0.3);
-      border-radius: 16px;
-      font-size: 13px;
-      font-weight: 500;
-      color: rgb(29, 161, 242);
-      transition: all 0.2s ease;
-      cursor: pointer;
-      vertical-align: middle;
-      position: relative;
-      z-index: 1000;
-    `;
-
-    // Create toggle switch
-    const toggleSwitch = document.createElement('label');
-    toggleSwitch.style.cssText = `
-      position: relative;
-      display: inline-block;
-      width: 48px;
-      height: 24px;
-      cursor: pointer;
-    `;
-
-    const toggleInput = document.createElement('input');
-    toggleInput.type = 'checkbox';
-    toggleInput.checked = isGridModeActive;
-    toggleInput.style.cssText = 'opacity: 0; width: 0; height: 0;';
-
-    const toggleSlider = document.createElement('span');
-    toggleSlider.style.cssText = `
-      position: absolute;
-      cursor: pointer;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background-color: ${isGridModeActive ? '#1DA1F2' : '#ccc'};
-      transition: 0.3s;
-      border-radius: 24px;
-    `;
-
-    const toggleDot = document.createElement('span');
-    toggleDot.style.cssText = `
-      position: absolute;
-      content: "";
-      height: 18px;
-      width: 18px;
-      left: ${isGridModeActive ? '27px' : '3px'};
-      bottom: 3px;
-      background-color: white;
-      transition: 0.3s;
-      border-radius: 50%;
-    `;
-
-    toggleSlider.appendChild(toggleDot);
-    toggleSwitch.appendChild(toggleInput);
-    toggleSwitch.appendChild(toggleSlider);
-
-    // Create label text
-    const labelText = document.createElement('span');
-    labelText.textContent = isGridModeActive ? 'XSaved Grid' : 'Default View';
-    labelText.style.fontWeight = '600';
-
-    // Create stats indicator
-    const statsIndicator = document.createElement('span');
-    statsIndicator.style.cssText = `
-      background: rgba(29, 161, 242, 0.2);
-      padding: 2px 8px;
-      border-radius: 10px;
-      font-size: 12px;
-      font-weight: 600;
-    `;
-    statsIndicator.textContent = this.stats ? `${this.stats.totalBookmarks} saved` : 'Loading...';
-
-    // Add toggle event
-    toggleInput.addEventListener('change', (e) => {
-      isGridModeActive = e.target.checked;
-      labelText.textContent = isGridModeActive ? 'XSaved Grid' : 'Default View';
-      toggleSlider.style.backgroundColor = isGridModeActive ? '#1DA1F2' : '#ccc';
-      toggleDot.style.left = isGridModeActive ? '27px' : '3px';
+      // Create toggle switch
+      const toggleSwitch = document.createElement('label');
+      toggleSwitch.style.cssText = `
+        position: relative;
+        display: inline-block;
+        width: 50px;
+        height: 24px;
+        cursor: pointer;
+      `;
       
-      this.toggleGridMode(isGridModeActive);
-    });
-
-    // Assemble toggle
-    toggleContainer.appendChild(labelText);
-    toggleContainer.appendChild(toggleSwitch);
-    toggleContainer.appendChild(statsIndicator);
-
-    // Style the container to use flexbox layout
-    container.style.cssText = `
-      display: flex;
-      align-items: center;
-      flex-direction: row;
-      gap: 16px;
-    `;
-
-    // Insert toggle inside the container, right after the h2 header
-    header.style.display = 'inline-block';
-    header.insertAdjacentElement('afterend', toggleContainer);
-
-    console.log('✅ Added bookmarks page toggle inside container next to header');
-    console.log('📍 Toggle placement details:');
-    console.log('- Toggle ID:', toggleContainer.id);
-    console.log('- Header text:', header.textContent);
-    console.log('- Container classes:', container.className);
-    console.log('- Container now using flexbox layout');
-    console.log('- Toggle position relative to header:', 'afterend');
+      const toggleInput = document.createElement('input');
+      toggleInput.type = 'checkbox';
+      toggleInput.style.opacity = '0';
+      toggleInput.checked = false;
+      
+      const toggleSlider = document.createElement('span');
+      toggleSlider.style.cssText = `
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #ccc;
+        border-radius: 24px;
+        transition: 0.4s;
+      `;
+      
+      const toggleDot = document.createElement('span');
+      toggleDot.style.cssText = `
+        position: absolute;
+        height: 18px;
+        width: 18px;
+        left: 3px;
+        bottom: 3px;
+        background-color: white;
+        border-radius: 50%;
+        transition: 0.4s;
+      `;
+      
+      toggleSwitch.appendChild(toggleInput);
+      toggleSwitch.appendChild(toggleSlider);
+      toggleSlider.appendChild(toggleDot);
+      
+      // Create label
+      const labelText = document.createElement('span');
+      labelText.textContent = 'XSaved Grid';
+      labelText.style.fontWeight = '600';
+      
+      // Add to container
+      toggleContainer.appendChild(labelText);
+      toggleContainer.appendChild(toggleSwitch);
+      
+      // Add to page
+      document.body.appendChild(toggleContainer);
+      
+      // Add toggle functionality
+      toggleInput.addEventListener('change', (e) => {
+        const isActive = e.target.checked;
+        labelText.textContent = isActive ? 'XSaved Grid' : 'Default View';
+        toggleSlider.style.backgroundColor = isActive ? '#1DA1F2' : '#ccc';
+        toggleDot.style.left = isActive ? '27px' : '3px';
+        this.toggleGridMode(isActive);
+      });
+      
+      console.log('✅ Successfully placed toggle using alternative strategy (fixed position)');
+      return true;
+    }
+    
+    return false;
   }
 
   debugDOMState() {
@@ -378,10 +782,49 @@ class XSavedContentScript {
     console.log(`🔄 Toggling grid mode: ${activate ? 'ON' : 'OFF'}`);
     
     if (activate) {
-      this.showGridInterface();
+      // Wait for bookmarks content to be fully loaded before showing grid
+      this.waitForBookmarksContent().then(() => {
+        this.showGridInterface();
+      }).catch(() => {
+        console.warn('⚠️ Bookmarks content not ready, showing grid anyway...');
+        this.showGridInterface();
+      });
     } else {
       this.hideGridInterface();
     }
+  }
+
+  async waitForBookmarksContent() {
+    return new Promise((resolve, reject) => {
+      let attempts = 0;
+      const maxAttempts = 10;
+      
+      const checkForContent = () => {
+        attempts++;
+        
+        // Check if bookmarks content is loaded
+        const bookmarksContent = document.querySelector('[data-testid="tweet"]') ||
+                                document.querySelector('[data-testid="tweetText"]') ||
+                                document.querySelector('[data-testid="primaryColumn"] [data-testid="tweet"]');
+        
+        if (bookmarksContent) {
+          console.log('✅ Bookmarks content is loaded, proceeding with grid mode');
+          resolve();
+          return;
+        }
+        
+        if (attempts >= maxAttempts) {
+          console.warn('⚠️ Bookmarks content detection timed out');
+          reject(new Error('Content not loaded'));
+          return;
+        }
+        
+        console.log(`⏳ Waiting for bookmarks content... (attempt ${attempts}/${maxAttempts})`);
+        setTimeout(checkForContent, 500);
+      };
+      
+      checkForContent();
+    });
   }
 
   showGridInterface() {
@@ -1488,10 +1931,8 @@ class XSavedContentScript {
           const toggle = document.getElementById('xsaved-bookmarks-toggle');
           if (!toggle && XSAVED_CONFIG.pages.isBookmarksPage()) {
             console.log('🔄 Re-adding bookmarks toggle after page update');
-            // Use the improved timing logic
-            this.waitForBookmarksPageLoad().then(() => {
-              this.addBookmarksPageToggle();
-            });
+            // Use the new strict validation system
+            this.attemptBookmarksTogglePlacement();
           }
         }
       });
@@ -3253,10 +3694,20 @@ if (document.readyState === 'loading') {
   xsavedContentScript.initialize();
 }
 
-// Also initialize after a short delay for dynamic pages
+// Also initialize after delays for dynamic pages and SPA navigation
 setTimeout(() => {
   xsavedContentScript.initialize();
 }, 1000);
+
+// Additional initialization for slow-loading SPAs
+setTimeout(() => {
+  xsavedContentScript.initialize();
+}, 3000);
+
+// Final fallback initialization
+setTimeout(() => {
+  xsavedContentScript.initialize();
+}, 8000);
 
 // Global cleanup
 window.addEventListener('beforeunload', () => {
