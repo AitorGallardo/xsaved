@@ -60,6 +60,14 @@ module.exports = {
           from: 'src/ui/styles.css', 
           to: 'src/ui/styles.css'
         },
+        { 
+          from: 'src/ui/theme-sync.css', 
+          to: 'src/ui/theme-sync.css'
+        },
+        { 
+          from: 'src/utils/theme-integration.js', 
+          to: 'src/utils/theme-integration.js'
+        },
         {
           from: 'src/extension/utils',
           to: 'src/extension/utils',

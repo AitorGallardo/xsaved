@@ -63,6 +63,7 @@ class XSavedContentScript {
   constructor() {
     this.initialized = false;
     this.stats = null;
+    this.themeUnsubscribe = null;
   }
 
   async initialize() {
@@ -71,6 +72,9 @@ class XSavedContentScript {
     console.log('📀 Initializing XSaved Content Script...');
     
     try {
+      // Initialize theme synchronization first
+      this.initializeThemeSync();
+      
       // Get current stats from service worker
       await this.updateStats();
       
@@ -90,6 +94,71 @@ class XSavedContentScript {
       
     } catch (error) {
       console.error('❌ Content Script initialization failed:', error);
+    }
+  }
+
+  /**
+   * Initialize theme synchronization with X.com
+   */
+  initializeThemeSync() {
+    if (window.XSavedTheme) {
+      console.log('🎨 Setting up theme synchronization...');
+      
+      // Subscribe to theme changes
+      this.themeUnsubscribe = window.XSavedTheme.onThemeChange((theme) => {
+        console.log('🎨 Theme updated in content script:', theme);
+        this.onThemeChanged(theme);
+      });
+      
+      // Get current theme
+      const currentTheme = window.XSavedTheme.getCurrentTheme();
+      if (currentTheme) {
+        this.onThemeChanged(currentTheme);
+      }
+    } else {
+      console.warn('🎨 XSavedTheme not available, theme sync disabled');
+    }
+  }
+
+  /**
+   * Handle theme changes
+   */
+  onThemeChanged(theme) {
+    // Update any dynamic UI elements with new theme
+    console.log('🎨 Applying theme to XSaved UI elements:', theme.mode);
+    
+    // You can add specific theme-dependent logic here
+    // For example, adjusting overlay opacity, shadows, etc.
+    this.updateUIForTheme(theme);
+  }
+
+  /**
+   * Update UI elements for new theme
+   */
+  updateUIForTheme(theme) {
+    // Update grid overlay if it exists
+    const gridOverlay = document.getElementById('xsaved-grid-overlay');
+    if (gridOverlay) {
+      gridOverlay.setAttribute('data-theme', theme.mode);
+    }
+
+    // Update save dialog if it exists
+    const saveDialog = document.querySelector('.xsaved-save-dialog');
+    if (saveDialog) {
+      saveDialog.setAttribute('data-theme', theme.mode);
+    }
+
+    // Update bookmarks toggle if it exists
+    const bookmarksToggle = document.getElementById('xsaved-bookmarks-toggle');
+    if (bookmarksToggle) {
+      bookmarksToggle.setAttribute('data-theme', theme.mode);
+    }
+
+    // Update fixed header/navbar if it exists
+    const fixedHeader = document.getElementById('xsaved-fixed-header');
+    if (fixedHeader) {
+      fixedHeader.setAttribute('data-theme', theme.mode);
+      console.log('🎨 Updated fixed header with theme:', theme.mode);
     }
   }
 
@@ -444,19 +513,18 @@ class XSavedContentScript {
     const toggleContainer = document.createElement('div');
     toggleContainer.id = 'xsaved-bookmarks-toggle';
     toggleContainer.style.cssText = `
-      display: inline-flex;
+      display: contents;
       align-items: center;
-      gap: 8px;
+      gap: 12px;
       margin-left: 16px;
       padding: 6px 12px;
       background: rgba(29, 161, 242, 0.1);
       border: 1px solid rgba(29, 161, 242, 0.3);
-      border-radius: 16px;
+      border-radius: 18px;
       font-size: 13px;
       font-weight: 500;
       color: rgb(29, 161, 242);
       transition: all 0.2s ease;
-      cursor: pointer;
       vertical-align: middle;
       position: relative;
       z-index: 1000;
@@ -467,14 +535,18 @@ class XSavedContentScript {
     toggleSwitch.style.cssText = `
       position: relative;
       display: inline-block;
-      width: 50px;
-      height: 24px;
+      width: 48px;
+      height: 26px;
       cursor: pointer;
     `;
     
     const toggleInput = document.createElement('input');
     toggleInput.type = 'checkbox';
-    toggleInput.style.opacity = '0';
+    toggleInput.style.cssText = `
+      opacity: 0;
+      width: 0;
+      height: 0;
+    `;
     toggleInput.checked = false;
     
     const toggleSlider = document.createElement('span');
@@ -485,54 +557,60 @@ class XSavedContentScript {
       right: 0;
       bottom: 0;
       background-color: #ccc;
-      border-radius: 24px;
-      transition: 0.4s;
+      border-radius: 26px;
+      transition: background-color 0.2s ease;
+      box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.1);
     `;
     
     const toggleDot = document.createElement('span');
     toggleDot.style.cssText = `
       position: absolute;
-      height: 18px;
-      width: 18px;
+      height: 20px;
+      width: 20px;
       left: 3px;
-      bottom: 3px;
+      top: 3px;
       background-color: white;
       border-radius: 50%;
-      transition: 0.4s;
+      transition: left 0.2s ease;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     `;
     
     toggleSwitch.appendChild(toggleInput);
     toggleSwitch.appendChild(toggleSlider);
     toggleSlider.appendChild(toggleDot);
     
-    // Create label text
-    const labelText = document.createElement('span');
-    labelText.textContent = 'XSaved Grid';
-    labelText.style.fontWeight = '600';
-    
-    // Create stats indicator
+    // Create stats indicator (bookmark count)
     const statsIndicator = document.createElement('span');
     statsIndicator.style.cssText = `
       background: rgba(29, 161, 242, 0.2);
-      padding: 2px 8px;
-      border-radius: 10px;
-      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 13px;
       font-weight: 600;
+      color: rgb(29, 161, 242);
     `;
     statsIndicator.textContent = this.stats ? `${this.stats.totalBookmarks} saved` : 'Loading...';
     
-    // Add toggle event
+    // Add toggle event - IMMEDIATE ANIMATION (no waiting for grid load)
     toggleInput.addEventListener('change', (e) => {
       const isActive = e.target.checked;
-      labelText.textContent = isActive ? 'XSaved Grid' : 'Default View';
-      toggleSlider.style.backgroundColor = isActive ? '#1DA1F2' : '#ccc';
-      toggleDot.style.left = isActive ? '27px' : '3px';
       
-      this.toggleGridMode(isActive);
+      // IMMEDIATE animation update - no lag
+      toggleSlider.style.backgroundColor = isActive ? '#1DA1F2' : '#ccc';
+      toggleDot.style.left = isActive ? '25px' : '3px';
+      
+      // Trigger grid mode asynchronously (don't wait for it)
+      if (isActive) {
+        // Show grid mode but don't block the toggle animation
+        setTimeout(() => {
+          this.showGridInterface();
+        }, 0); // Immediate but async
+      } else {
+        this.hideGridInterface();
+      }
     });
     
-    // Assemble toggle
-    toggleContainer.appendChild(labelText);
+    // Assemble toggle (no text labels, just toggle + count)
     toggleContainer.appendChild(toggleSwitch);
     toggleContainer.appendChild(statsIndicator);
     
@@ -780,14 +858,9 @@ class XSavedContentScript {
   toggleGridMode(activate) {
     console.log(`🔄 Toggling grid mode: ${activate ? 'ON' : 'OFF'}`);
     
+    // Simple immediate toggle - no waiting for content
     if (activate) {
-      // Wait for bookmarks content to be fully loaded before showing grid
-      this.waitForBookmarksContent().then(() => {
-        this.showGridInterface();
-      }).catch(() => {
-        console.warn('⚠️ Bookmarks content not ready, showing grid anyway...');
-        this.showGridInterface();
-      });
+      this.showGridInterface();
     } else {
       this.hideGridInterface();
     }
@@ -1046,15 +1119,14 @@ class XSavedContentScript {
     // Create fixed header container (outside the overlay container)
     const headerContainer = document.createElement('div');
     headerContainer.id = 'xsaved-fixed-header';
+    headerContainer.className = 'xsaved-navbar';
     headerContainer.style.cssText = `
       position: fixed;
       top: 50px;
       left: 0;
       right: 0;
-      background: rgb(0, 0, 0);
       z-index: 10001;
       padding: 20px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     `;
 
     // Create header with search, export, and tag filters in one row
@@ -1093,16 +1165,8 @@ class XSavedContentScript {
       const tagButton = document.createElement('button');
       tagButton.textContent = tag;
       tagButton.dataset.tag = tag;
+      tagButton.className = `xsaved-tag-selector ${tag === 'All' ? 'active' : ''}`;
       tagButton.style.cssText = `
-        padding: 8px 16px;
-        background: ${tag === 'All' ? 'rgba(255, 255, 255, 0.9)' : 'rgba(255, 255, 255, 0.1)'};
-        color: ${tag === 'All' ? 'rgb(0, 0, 0)' : 'rgba(255, 255, 255, 0.9)'};
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 20px;
-        font-size: 14px;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.2s ease;
         white-space: nowrap;
         flex-shrink: 0;
         position: relative;
@@ -1114,33 +1178,25 @@ class XSavedContentScript {
           selectedTags.clear();
           selectedTags.add('All');
           tagSelector.querySelectorAll('button').forEach(btn => {
-            btn.style.background = 'rgba(255, 255, 255, 0.1)';
-            btn.style.color = 'rgba(255, 255, 255, 0.9)';
-            btn.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+            btn.classList.remove('active');
           });
-          tagButton.style.background = 'rgba(255, 255, 255, 0.9)';
-          tagButton.style.color = 'rgb(0, 0, 0)';
+          tagButton.classList.add('active');
         } else {
           // Remove "All" from selection when other tags are selected
           selectedTags.delete('All');
           const allButton = tagSelector.querySelector('[data-tag="All"]');
           if (allButton) {
-            allButton.style.background = 'rgba(255, 255, 255, 0.1)';
-            allButton.style.color = 'rgba(255, 255, 255, 0.9)';
+            allButton.classList.remove('active');
           }
 
           if (selectedTags.has(tag)) {
             // Deselect tag
             selectedTags.delete(tag);
-            tagButton.style.background = 'rgba(255, 255, 255, 0.1)';
-            tagButton.style.color = 'rgba(255, 255, 255, 0.9)';
-            tagButton.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+            tagButton.classList.remove('active');
           } else {
             // Select tag
             selectedTags.add(tag);
-            tagButton.style.background = 'rgba(29, 161, 242, 0.8)';
-            tagButton.style.color = 'white';
-            tagButton.style.borderColor = 'rgba(29, 161, 242, 1)';
+            tagButton.classList.add('active');
           }
 
           // If no tags selected, select "All"
@@ -1148,8 +1204,7 @@ class XSavedContentScript {
             selectedTags.add('All');
             const allButton = tagSelector.querySelector('[data-tag="All"]');
             if (allButton) {
-              allButton.style.background = 'rgba(255, 255, 255, 0.9)';
-              allButton.style.color = 'rgb(0, 0, 0)';
+              allButton.classList.add('active');
             }
           }
         }
@@ -1173,13 +1228,8 @@ class XSavedContentScript {
     const searchBox = document.createElement('input');
     searchBox.type = 'text';
     searchBox.placeholder = 'Search bookmarks...';
+    searchBox.className = 'xsaved-search-input';
     searchBox.style.cssText = `
-      padding: 8px 16px;
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      border-radius: 20px;
-      background: rgba(255, 255, 255, 0.1);
-      color: white;
-      font-size: 14px;
       width: 300px;
     `;
 
@@ -1286,7 +1336,6 @@ class XSavedContentScript {
     // Apply base card styles without floating animations
     card.className = 'tweet-card';
     card.style.cssText = `
-      background-color: #1A1A1A;
       width: 240px;
       height: 280px;
       border-radius: 12px;
@@ -1295,7 +1344,6 @@ class XSavedContentScript {
       transition: transform 0.3s ease, box-shadow 0.3s ease;
       position: relative;
       cursor: pointer;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.8);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     `;
 
@@ -1406,8 +1454,8 @@ class XSavedContentScript {
     const userInfo = document.createElement('div');
     
     const userName = document.createElement('div');
+    userName.className = 'tweet-card-username';
     userName.style.cssText = `
-      color: #FFFFFF;
       font-size: 14px;
       font-weight: bold;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -1419,8 +1467,8 @@ class XSavedContentScript {
     userName.textContent = safeBookmark.author;
 
     const userHandle = document.createElement('div');
+    userHandle.className = 'tweet-card-handle';
     userHandle.style.cssText = `
-      color: #888888;
       font-size: 12px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     `;
@@ -1434,8 +1482,8 @@ class XSavedContentScript {
 
     // Tweet text
     const tweetText = document.createElement('div');
+    tweetText.className = 'tweet-card-text';
     tweetText.style.cssText = `
-      color: #FFFFFF;
       font-size: 14px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       margin-bottom: 16px;
@@ -3712,6 +3760,16 @@ setTimeout(() => {
 window.addEventListener('beforeunload', () => {
   if (bookmarkButtonObserver) {
     bookmarkButtonObserver.disconnect();
+  }
+  
+  // Cleanup theme subscription
+  if (xsavedContentScript && xsavedContentScript.themeUnsubscribe) {
+    xsavedContentScript.themeUnsubscribe();
+  }
+  
+  // Cleanup theme detector
+  if (window.xsavedThemeDetector) {
+    window.xsavedThemeDetector.destroy();
   }
 });
 

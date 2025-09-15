@@ -1,0 +1,353 @@
+/**
+ * XSaved Extension v2 - Theme Synchronization CSS
+ * CSS Variables system that adapts to X.com theme
+ */
+
+/* ===== THEME CSS VARIABLES ===== */
+:root {
+  /* Default light theme values (fallback) - exact X.com colors */
+  --xsaved-primary-color: #1d9bf0;
+  --xsaved-bg-color: #ffffff;
+  --xsaved-surface-color: #f7f9fa;
+  --xsaved-text-color: #0f1419;
+  --xsaved-text-secondary: #536471;
+  --xsaved-border-color: #cfd9de;
+  --xsaved-hover-color: rgba(15, 20, 25, 0.1);
+  --xsaved-accent-color: #1d9bf0;
+  --xsaved-input-bg: #eff3f4;
+  --xsaved-placeholder-color: #536471;
+  
+  /* Shadows and effects */
+  --xsaved-shadow-light: 0 2px 8px rgba(0, 0, 0, 0.1);
+  --xsaved-shadow-medium: 0 4px 12px rgba(0, 0, 0, 0.15);
+  --xsaved-shadow-heavy: 0 8px 24px rgba(0, 0, 0, 0.25);
+  
+  /* Radius and spacing */
+  --xsaved-radius-small: 4px;
+  --xsaved-radius-medium: 8px;
+  --xsaved-radius-large: 12px;
+  --xsaved-radius-full: 9999px;
+}
+
+/* ===== THEME-AWARE COMPONENT STYLES ===== */
+
+/* Save Dialog */
+.xsaved-save-dialog {
+  background: var(--xsaved-surface-color) !important;
+  color: var(--xsaved-text-color) !important;
+  border: 1px solid var(--xsaved-border-color) !important;
+  box-shadow: var(--xsaved-shadow-heavy) !important;
+}
+
+.xsaved-save-dialog input,
+.xsaved-save-dialog textarea {
+  background: var(--xsaved-input-bg) !important;
+  color: var(--xsaved-text-color) !important;
+  border: 1px solid var(--xsaved-border-color) !important;
+  border-radius: var(--xsaved-radius-medium) !important;
+  padding: 12px 16px !important;
+  font-size: 15px !important;
+  line-height: 20px !important;
+}
+
+.xsaved-save-dialog input::placeholder,
+.xsaved-save-dialog textarea::placeholder {
+  color: var(--xsaved-placeholder-color) !important;
+}
+
+.xsaved-save-dialog button {
+  background: var(--xsaved-primary-color) !important;
+  color: var(--xsaved-bg-color) !important;
+  border: none !important;
+}
+
+.xsaved-save-dialog button:hover {
+  background: var(--xsaved-accent-color) !important;
+  filter: brightness(0.9);
+}
+
+/* Tag Input */
+.xsaved-tag-input {
+  background: var(--xsaved-input-bg) !important;
+  color: var(--xsaved-text-color) !important;
+  border: 1px solid var(--xsaved-border-color) !important;
+  border-radius: var(--xsaved-radius-medium) !important;
+  padding: 8px 12px !important;
+  font-size: 14px !important;
+}
+
+.xsaved-tag-input::placeholder {
+  color: var(--xsaved-placeholder-color) !important;
+}
+
+.xsaved-tag-input:focus {
+  outline: none !important;
+  border-color: var(--xsaved-primary-color) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--xsaved-primary-color) 20%, transparent) !important;
+}
+
+/* Bookmark Button Interception */
+.xsaved-intercepted::after {
+  background: var(--xsaved-primary-color) !important;
+}
+
+/* Bookmarks Toggle */
+#xsaved-bookmarks-toggle {
+  background: var(--xsaved-surface-color) !important;
+  color: var(--xsaved-text-color) !important;
+  border: 1px solid var(--xsaved-border-color) !important;
+}
+
+#xsaved-bookmarks-toggle:hover {
+  background: var(--xsaved-hover-color) !important;
+  border-color: var(--xsaved-primary-color) !important;
+}
+
+/* Grid Overlay */
+#xsaved-grid-overlay,
+.xsaved-grid-overlay {
+  background: var(--xsaved-bg-color) !important;
+  color: var(--xsaved-text-color) !important;
+}
+
+/* Grid Search Input - Exact X.com styling */
+#xsaved-grid-overlay input[type="text"],
+.xsaved-grid-overlay input[type="text"] {
+  background: var(--xsaved-input-bg) !important;
+  color: var(--xsaved-text-color) !important;
+  border: 1px solid var(--xsaved-border-color) !important;
+  border-radius: var(--xsaved-radius-full) !important;
+  padding: 12px 16px !important;
+  font-size: 15px !important;
+  line-height: 20px !important;
+}
+
+#xsaved-grid-overlay input[type="text"]::placeholder,
+.xsaved-grid-overlay input[type="text"]::placeholder {
+  color: var(--xsaved-placeholder-color) !important;
+}
+
+#xsaved-grid-overlay input[type="text"]:focus,
+.xsaved-grid-overlay input[type="text"]:focus {
+  outline: none !important;
+  border-color: var(--xsaved-primary-color) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--xsaved-primary-color) 20%, transparent) !important;
+}
+
+/* Navbar/Header styling for tag selectors */
+.xsaved-navbar,
+.xsaved-header,
+.xsaved-controls,
+#xsaved-fixed-header {
+  background: var(--xsaved-bg-color) !important;
+  color: var(--xsaved-text-color) !important;
+  border-bottom: 1px solid var(--xsaved-border-color) !important;
+}
+
+/* Ensure all text elements in navbar inherit the theme colors */
+.xsaved-navbar *,
+.xsaved-header *,
+.xsaved-controls *,
+#xsaved-fixed-header * {
+  color: inherit !important;
+}
+
+/* Specific override for any button text in the header */
+#xsaved-fixed-header button,
+#xsaved-fixed-header input,
+#xsaved-fixed-header div {
+  color: var(--xsaved-text-color) !important;
+}
+
+/* Search Input Specific Styling */
+.xsaved-search-input {
+  background: var(--xsaved-input-bg) !important;
+  color: var(--xsaved-text-color) !important;
+  border: 1px solid var(--xsaved-border-color) !important;
+  border-radius: var(--xsaved-radius-full) !important;
+  padding: 12px 16px !important;
+  font-size: 15px !important;
+  line-height: 20px !important;
+}
+
+.xsaved-search-input::placeholder {
+  color: var(--xsaved-placeholder-color) !important;
+}
+
+.xsaved-search-input:focus {
+  outline: none !important;
+  border-color: var(--xsaved-primary-color) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--xsaved-primary-color) 20%, transparent) !important;
+}
+
+/* Tag selector styling */
+.xsaved-tag-selector,
+.xsaved-filter-button {
+  background: var(--xsaved-surface-color) !important;
+  color: var(--xsaved-text-color) !important;
+  border: 1px solid var(--xsaved-border-color) !important;
+  border-radius: var(--xsaved-radius-full) !important;
+  padding: 8px 16px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  transition: all 0.2s ease !important;
+  cursor: pointer !important;
+}
+
+/* Override any inline styles that might conflict */
+button.xsaved-tag-selector {
+  color: var(--xsaved-text-color) !important;
+}
+
+button.xsaved-tag-selector * {
+  color: inherit !important;
+}
+
+.xsaved-tag-selector:hover,
+.xsaved-filter-button:hover {
+  background: var(--xsaved-hover-color) !important;
+}
+
+.xsaved-tag-selector.active,
+.xsaved-filter-button.active {
+  background: var(--xsaved-primary-color) !important;
+  color: white !important;
+  border-color: var(--xsaved-primary-color) !important;
+}
+
+.xsaved-tag-selector.active:hover,
+.xsaved-filter-button.active:hover {
+  background: var(--xsaved-accent-color) !important;
+  filter: brightness(0.9) !important;
+}
+
+/* Tweet Cards */
+.tweet-card {
+  background: var(--xsaved-surface-color) !important;
+  color: var(--xsaved-text-color) !important;
+  border: 1px solid var(--xsaved-border-color) !important;
+  box-shadow: var(--xsaved-shadow-medium) !important;
+}
+
+.tweet-card:hover {
+  background: var(--xsaved-hover-color) !important;
+}
+
+.tweet-card.selected {
+  border-color: var(--xsaved-primary-color) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--xsaved-primary-color) 20%, transparent) !important;
+}
+
+/* Tweet Card Text Elements */
+.tweet-card-username {
+  color: var(--xsaved-text-color) !important;
+}
+
+.tweet-card-handle {
+  color: var(--xsaved-text-secondary) !important;
+}
+
+.tweet-card-text {
+  color: var(--xsaved-text-color) !important;
+}
+
+/* Tweet Card Content */
+.tweet-card * {
+  color: inherit !important;
+}
+
+/* Scrollbars */
+#xsaved-grid-overlay::-webkit-scrollbar-thumb,
+.xsaved-grid-overlay::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--xsaved-text-secondary) 30%, transparent) !important;
+}
+
+#xsaved-grid-overlay::-webkit-scrollbar-thumb:hover,
+.xsaved-grid-overlay::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--xsaved-text-secondary) 50%, transparent) !important;
+}
+
+/* ===== THEME-SPECIFIC ADJUSTMENTS ===== */
+
+/* Dark theme specific adjustments */
+[data-xsaved-theme="dark"] {
+  --xsaved-shadow-light: 0 2px 8px rgba(255, 255, 255, 0.05);
+  --xsaved-shadow-medium: 0 4px 12px rgba(255, 255, 255, 0.1);
+  --xsaved-shadow-heavy: 0 8px 24px rgba(255, 255, 255, 0.15);
+}
+
+/* Dim theme specific adjustments */
+[data-xsaved-theme="dim"] {
+  --xsaved-shadow-light: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --xsaved-shadow-medium: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --xsaved-shadow-heavy: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* ===== ACCESSIBILITY ENHANCEMENTS ===== */
+
+/* High contrast mode adjustments */
+@media (prefers-contrast: high) {
+  :root {
+    --xsaved-border-color: color-mix(in srgb, var(--xsaved-text-color) 50%, transparent);
+  }
+  
+  .xsaved-save-dialog,
+  #xsaved-bookmarks-toggle,
+  .tweet-card {
+    border-width: 2px !important;
+  }
+}
+
+/* Reduced motion respects user preferences */
+@media (prefers-reduced-motion: reduce) {
+  .xsaved-save-dialog,
+  #xsaved-bookmarks-toggle,
+  .tweet-card,
+  #xsaved-grid-overlay {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ===== RESPONSIVE THEME ADJUSTMENTS ===== */
+
+/* Mobile specific theme adjustments */
+@media (max-width: 768px) {
+  :root {
+    --xsaved-radius-medium: 6px;
+    --xsaved-radius-large: 10px;
+  }
+  
+  .xsaved-save-dialog {
+    border-radius: var(--xsaved-radius-medium) !important;
+  }
+}
+
+/* ===== FOCUS STYLES ===== */
+.xsaved-save-dialog button:focus,
+#xsaved-bookmarks-toggle:focus,
+.xsaved-tag-input:focus {
+  outline: 2px solid var(--xsaved-primary-color) !important;
+  outline-offset: 2px !important;
+}
+
+/* ===== LOADING STATES ===== */
+.xsaved-loading {
+  color: var(--xsaved-text-secondary) !important;
+}
+
+.xsaved-loading::after {
+  border-color: var(--xsaved-text-secondary) transparent var(--xsaved-text-secondary) transparent !important;
+}
+
+/* ===== ERROR STATES ===== */
+.xsaved-error {
+  color: #ff6b6b !important;
+  border-color: #ff6b6b !important;
+}
+
+/* ===== SUCCESS STATES ===== */
+.xsaved-success {
+  color: #51cf66 !important;
+  border-color: #51cf66 !important;
+}
