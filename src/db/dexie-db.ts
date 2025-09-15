@@ -71,6 +71,49 @@ export class XSavedDexieDB extends Dexie {
       `
     });
 
+    // Version 2: Add avatar_url field to bookmarks
+    // Note: Dexie automatically handles schema changes by preserving existing data
+    this.version(2).stores({
+      // Bookmarks: Updated schema with avatar_url field
+      bookmarks: `
+        id,
+        author,
+        avatar_url,
+        created_at,
+        bookmarked_at,
+        *tags,
+        *textTokens
+      `,
+      
+      // Keep other stores unchanged
+      tags: `
+        name,
+        usageCount,
+        createdAt,
+        category
+      `,
+      
+      collections: `
+        id,
+        name,
+        createdAt,
+        *bookmarkIds
+      `,
+      
+      settings: `
+        key,
+        value,
+        updatedAt
+      `,
+      
+      searchIndex: `
+        bookmarkId,
+        *tokens,
+        relevanceScore,
+        lastUpdated
+      `
+    });
+
     // Add hooks for automatic data processing
     this.bookmarks.hook('creating', (primKey, obj, trans) => {
       // Auto-generate textTokens if not provided

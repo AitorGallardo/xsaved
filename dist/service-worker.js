@@ -128,6 +128,44 @@ class XSavedDexieDB extends import_wrapper_prod {
         lastUpdated
       `
         });
+        // Version 2: Add avatar_url field to bookmarks
+        // Note: Dexie automatically handles schema changes by preserving existing data
+        this.version(2).stores({
+            // Bookmarks: Updated schema with avatar_url field
+            bookmarks: `
+        id,
+        author,
+        avatar_url,
+        created_at,
+        bookmarked_at,
+        *tags,
+        *textTokens
+      `,
+            // Keep other stores unchanged
+            tags: `
+        name,
+        usageCount,
+        createdAt,
+        category
+      `,
+            collections: `
+        id,
+        name,
+        createdAt,
+        *bookmarkIds
+      `,
+            settings: `
+        key,
+        value,
+        updatedAt
+      `,
+            searchIndex: `
+        bookmarkId,
+        *tokens,
+        relevanceScore,
+        lastUpdated
+      `
+        });
         // Add hooks for automatic data processing
         this.bookmarks.hook('creating', (primKey, obj, trans) => {
             // Auto-generate textTokens if not provided
@@ -943,7 +981,7 @@ const db = new XSavedDatabase();
  * IndexedDB schema with performance-optimized indexes
  */
 const DATABASE_NAME = 'XSavedDB';
-const DATABASE_VERSION = 3;
+const DATABASE_VERSION = 4;
 // Store names
 const STORES = {
     BOOKMARKS: 'bookmarks',
@@ -2484,11 +2522,15 @@ const processBookmarksResponse = (data) => {
         const result = entry?.content?.itemContent?.tweet_results?.result;
         const legacy = result?.legacy;
         const user = result?.core?.user_results?.result?.legacy;
+        const avatar = result?.core?.user_results?.result?.avatar;
+
+        const avatarUrl = avatar?.image_url || user?.profile_image_url_https;
 
         return {
           id: result?.rest_id,
           text: legacy?.full_text,
           author: user?.screen_name,
+          avatar_url: avatarUrl,
           created_at: legacy?.created_at,
           sortIndex: entry?.sortIndex, 
           // Store full data for media extraction
@@ -2521,6 +2563,7 @@ const enhanceBookmarksWithMetadata = (bookmarks) => {
       id: bookmark.id,
       text: bookmark.text,
       author: bookmark.author,
+      avatar_url: bookmark.avatar_url,
       created_at: bookmark.created_at,
       sortIndex: bookmark.sortIndex, // Pass through the sortIndex
       media_urls: extractMediaUrls(bookmark.FULL_DATA)
@@ -3294,6 +3337,7 @@ const saveBookmarkToLocal = async (bookmark, userTags = []) => {
             id: bookmark.id,
             text: bookmark.text || '',
             author: bookmark.author || '',
+            avatar_url: bookmark.avatar_url || null,
             created_at: bookmark.created_at || null,
             bookmarked_at: bookmark.sortIndex ? getSortIndexDateISO(bookmark.sortIndex) : null,
             tags: userTags.length > 0 ? userTags : (bookmark.tags || []),

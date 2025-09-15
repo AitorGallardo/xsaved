@@ -11,6 +11,7 @@ export interface BookmarkEntity {
   // Essential content
   text: string;                         // Tweet text content
   author: string;                       // Username only (no extra metadata)
+  avatar_url?: string;                  // Author's profile image URL
   
   // Timestamps  
   created_at: string;                   // When tweet was posted (ISO string)

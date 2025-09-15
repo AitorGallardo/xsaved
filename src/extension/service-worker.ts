@@ -253,6 +253,7 @@ const saveBookmarkToLocal = async (bookmark, userTags = []) => {
       id: bookmark.id,
       text: bookmark.text || '',
       author: bookmark.author || '',
+      avatar_url: bookmark.avatar_url || null,
       created_at: bookmark.created_at || null,
       bookmarked_at: bookmark.sortIndex ? getSortIndexDateISO(bookmark.sortIndex) : null,
       tags: userTags.length > 0 ? userTags : (bookmark.tags || []),

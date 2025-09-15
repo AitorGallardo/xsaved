@@ -1326,6 +1326,7 @@ class XSavedContentScript {
       id: bookmark?.id || 'unknown',
       text: bookmark?.text || 'No content available',
       author: bookmark?.author || 'unknown',
+      avatar_url: bookmark?.avatar_url || null,
       tags: bookmark?.tags || [],
       media_urls: bookmark?.media_urls || [],
       bookmarked_at: bookmark?.bookmarked_at || bookmark?.created_at || new Date().toISOString()
@@ -1443,12 +1444,29 @@ class XSavedContentScript {
       overflow: hidden;
     `;
     
-    // Get first letter of username for profile pic
-    const getInitial = (name) => {
-      return name.charAt(0).toUpperCase();
-    };
-    
-    profilePic.textContent = getInitial(safeBookmark.author);
+    // Try to display avatar image, fallback to initials
+    if (safeBookmark.avatar_url) {
+      const avatarImg = document.createElement('img');
+      avatarImg.src = safeBookmark.avatar_url;
+      avatarImg.style.cssText = `
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: 50%;
+      `;
+      avatarImg.alt = safeBookmark.author;
+      
+      // Fallback to initials if image fails to load
+      avatarImg.onerror = () => {
+        profilePic.removeChild(avatarImg);
+        profilePic.textContent = safeBookmark.author.charAt(0).toUpperCase();
+      };
+      
+      profilePic.appendChild(avatarImg);
+    } else {
+      // Fallback to initial if no avatar URL
+      profilePic.textContent = safeBookmark.author.charAt(0).toUpperCase();
+    }
 
     // User info
     const userInfo = document.createElement('div');
@@ -1692,11 +1710,29 @@ class XSavedContentScript {
       overflow: hidden;
     `;
     
-    const getInitial = (name) => {
-      return name.charAt(0).toUpperCase();
-    };
-    
-    profilePic.textContent = getInitial(tweet.author);
+    // Try to display avatar image, fallback to initials
+    if (tweet.avatar_url) {
+      const avatarImg = document.createElement('img');
+      avatarImg.src = tweet.avatar_url;
+      avatarImg.style.cssText = `
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: 50%;
+      `;
+      avatarImg.alt = tweet.author;
+      
+      // Fallback to initials if image fails to load
+      avatarImg.onerror = () => {
+        profilePic.removeChild(avatarImg);
+        profilePic.textContent = tweet.author.charAt(0).toUpperCase();
+      };
+      
+      profilePic.appendChild(avatarImg);
+    } else {
+      // Fallback to initial if no avatar URL
+      profilePic.textContent = tweet.author.charAt(0).toUpperCase();
+    }
 
     // User info
     const userInfo = document.createElement('div');
@@ -2150,6 +2186,10 @@ class XSavedContentScript {
         userNameElement.textContent.replace('@', '').trim() : 
         'unknown';
 
+      // Extract avatar URL
+      const avatarElement = tweetContainer.querySelector(XSAVED_CONFIG.selectors.userAvatar + ' img');
+      const avatar_url = avatarElement ? avatarElement.getAttribute('src') : null;
+
       // Extract creation timestamp (best effort)
       const timeElement = tweetContainer.querySelector('time');
       const created_at = timeElement ? 
@@ -2163,6 +2203,7 @@ class XSavedContentScript {
         id: tweetId,
         text,
         author,
+        avatar_url,
         created_at,
         media_urls
       };

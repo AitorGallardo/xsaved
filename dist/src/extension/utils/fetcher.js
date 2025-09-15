@@ -148,11 +148,15 @@ export const processBookmarksResponse = (data) => {
         const result = entry?.content?.itemContent?.tweet_results?.result;
         const legacy = result?.legacy;
         const user = result?.core?.user_results?.result?.legacy;
+        const avatar = result?.core?.user_results?.result?.avatar;
+
+        const avatarUrl = avatar?.image_url || user?.profile_image_url_https;
 
         return {
           id: result?.rest_id,
           text: legacy?.full_text,
           author: user?.screen_name,
+          avatar_url: avatarUrl,
           created_at: legacy?.created_at,
           sortIndex: entry?.sortIndex, 
           // Store full data for media extraction
@@ -185,6 +189,7 @@ export const enhanceBookmarksWithMetadata = (bookmarks) => {
       id: bookmark.id,
       text: bookmark.text,
       author: bookmark.author,
+      avatar_url: bookmark.avatar_url,
       created_at: bookmark.created_at,
       sortIndex: bookmark.sortIndex, // Pass through the sortIndex
       media_urls: extractMediaUrls(bookmark.FULL_DATA)
