@@ -65,6 +65,9 @@ class XSavedContentScript {
     this.initialized = false;
     this.stats = null;
     this.themeUnsubscribe = null;
+    this.allBookmarks = []; // Store all bookmarks for filtering
+    this.currentSelectedTags = new Set(['All']); // Track current tag selection
+    this.currentGridContainer = null; // Store reference to current grid container
   }
 
   async initialize() {
@@ -1019,6 +1022,10 @@ class XSavedContentScript {
         });
         
         console.log(`✅ Loaded ${bookmarks.length} bookmarks (latest first by created_at)`);
+        
+        // Store all bookmarks for filtering
+        this.allBookmarks = bookmarks;
+        
         this.renderBookmarksGrid(container, bookmarks);
       } else {
         console.error('❌ Search failed:', response);
@@ -1029,6 +1036,9 @@ class XSavedContentScript {
 
   renderBookmarksGrid(container, bookmarks) {
     container.innerHTML = '';
+    
+    // Store container reference for filtering
+    this.currentGridContainer = container;
 
     // Helper function to group bookmarks by month/year
     const groupBookmarksByDate = (bookmarks) => {
@@ -1159,8 +1169,8 @@ class XSavedContentScript {
       'Travel', 'Food', 'Fashion', 'Art', 'Education', 'Politics', 'Environment'
     ];
     
-    // Track selected tags for multi-select
-    const selectedTags = new Set(['All']);
+    // Track selected tags for multi-select - use class-level state
+    const selectedTags = this.currentSelectedTags;
     
     sampleTags.forEach(tag => {
       const tagButton = document.createElement('button');
@@ -1211,7 +1221,9 @@ class XSavedContentScript {
         }
         
         console.log(`🏷️ Selected tags:`, Array.from(selectedTags));
-        // TODO: Implement tag filtering functionality
+        
+        // Trigger bookmark filtering based on selected tags
+        this.filterBookmarksByTags(Array.from(selectedTags), this.currentGridContainer);
       });
 
       tagSelector.appendChild(tagButton);
@@ -1321,6 +1333,87 @@ class XSavedContentScript {
     console.log(`✅ Rendered grid with ${bookmarks.length} bookmarks`);
   }
 
+  /**
+   * Filter bookmarks by selected tags and update the grid
+   * @param {Array} selectedTags - Array of selected tag names
+   * @param {Element} container - Grid container to update
+   */
+  async filterBookmarksByTags(selectedTags, container) {
+    console.log(`🔍 Filtering bookmarks by tags:`, selectedTags);
+    
+    // Update current selected tags
+    this.currentSelectedTags = new Set(selectedTags);
+    
+    let filteredBookmarks;
+    
+    if (selectedTags.includes('All') || selectedTags.length === 0) {
+      // Show all bookmarks when "All" is selected or no tags selected
+      filteredBookmarks = this.allBookmarks;
+      console.log(`📋 Showing all ${filteredBookmarks.length} bookmarks`);
+    } else {
+      // Filter bookmarks that have at least one of the selected tags
+      filteredBookmarks = this.allBookmarks.filter(bookmark => {
+        const bookmarkTags = bookmark.tags || [];
+        
+        // Check if bookmark has any of the selected tags
+        const hasMatchingTag = selectedTags.some(selectedTag => 
+          bookmarkTags.some(bookmarkTag => 
+            bookmarkTag.toLowerCase().includes(selectedTag.toLowerCase())
+          )
+        );
+        
+        return hasMatchingTag;
+      });
+      
+      console.log(`📋 Filtered to ${filteredBookmarks.length} bookmarks from ${this.allBookmarks.length} total`);
+      
+      // Show filtering status in the UI
+      this.showFilteringStatus(selectedTags, filteredBookmarks.length, this.allBookmarks.length);
+    }
+    
+    // Re-render the grid with filtered bookmarks
+    if (container) {
+      this.renderBookmarksGrid(container, filteredBookmarks);
+    } else {
+      console.error('❌ Grid container not available for filtering');
+    }
+  }
+
+  /**
+   * Show filtering status in the UI
+   * @param {Array} selectedTags - Currently selected tags
+   * @param {number} filteredCount - Number of filtered bookmarks
+   * @param {number} totalCount - Total number of bookmarks
+   */
+  showFilteringStatus(selectedTags, filteredCount, totalCount) {
+    // Find or create status element in the header
+    let statusElement = document.getElementById('xsaved-filter-status');
+    
+    if (!statusElement) {
+      statusElement = document.createElement('div');
+      statusElement.id = 'xsaved-filter-status';
+      statusElement.style.cssText = `
+        font-size: 14px;
+        color: #666;
+        margin-left: 16px;
+        font-weight: 500;
+      `;
+      
+      // Add to the header
+      const header = document.querySelector('#xsaved-fixed-header .xsaved-tag-selector').parentElement;
+      if (header) {
+        header.appendChild(statusElement);
+      }
+    }
+    
+    // Update status text
+    if (selectedTags.includes('All') || selectedTags.length === 0) {
+      statusElement.textContent = `Showing all ${totalCount} bookmarks`;
+    } else {
+      statusElement.textContent = `Filtered by [${selectedTags.join(', ')}]: ${filteredCount}/${totalCount} bookmarks`;
+    }
+  }
+
   createBookmarkCard(bookmark) {
     // Safe property access with fallbacks
     const safeBookmark = {
@@ -1352,6 +1445,7 @@ class XSavedContentScript {
     // Hover effect
     card.addEventListener('mouseenter', () => {
       card.style.transform = 'translateY(-5px)';
+      card.style.zIndex = '10000';
       card.style.boxShadow = '0 8px 15px rgba(0, 0, 0, 0.3)';
     });
 

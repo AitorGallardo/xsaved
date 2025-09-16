@@ -3224,6 +3224,7 @@ class ExtensionServiceWorker {
             this.setupSmartScheduling();
             console.log('✅ Enhanced Service Worker initialized successfully');
             this.initialized = true;
+            // Dev tag functions are initialized with testXSaved object below
         }
         catch (error) {
             console.error('❌ Service Worker initialization failed:', error);
@@ -4371,8 +4372,119 @@ if (typeof self !== 'undefined') {
             catch (error) {
                 console.error('❌ Reinitialization failed:', error);
             }
-        }
+        },
+        //
+        // ===== DEVELOPMENT TAG FUNCTIONS =====
+        addRandomTags: async (minTags = 2, maxTags = 4, preserveExisting = true, onlyUntagged = true) => {
+            const CONTENT_TAGS = ['Tech', 'AI', 'Programming', 'Design', 'Music', 'Gaming', 'News', 'Sports', 'Entertainment', 'Science', 'Business', 'Finance', 'Health', 'Travel', 'Food', 'Fashion', 'Art', 'Education', 'Politics', 'Environment'];
+            try {
+                console.log('🏷️ Starting random tag addition process...');
+                await serviceWorker.initialize();
+                if (!serviceWorker.db) {
+                    console.error('❌ Database not initialized');
+                    return { success: false, error: 'Database not initialized' };
+                }
+                const result = await serviceWorker.db.getAllBookmarks({ limit: 10000 });
+                if (!result.success || !result.data) {
+                    console.error('❌ Failed to fetch bookmarks:', result.error);
+                    return { success: false, error: result.error };
+                }
+                const allBookmarks = result.data;
+                console.log(`📊 Found ${allBookmarks.length} total bookmarks`);
+                const bookmarksToUpdate = onlyUntagged
+                    ? allBookmarks.filter(bookmark => !bookmark.tags || bookmark.tags.length === 0)
+                    : allBookmarks;
+                console.log(`🎯 Will update ${bookmarksToUpdate.length} bookmarks`);
+                if (bookmarksToUpdate.length === 0) {
+                    console.log('✅ All bookmarks already have tags');
+                    return { success: true, updated: 0, message: 'All bookmarks already tagged' };
+                }
+                const tagUsageStats = {};
+                let updateCount = 0;
+                for (const bookmark of bookmarksToUpdate) {
+                    const numNewTags = Math.floor(Math.random() * (maxTags - minTags + 1)) + minTags;
+                    const selectedTags = [];
+                    const availableForSelection = [...CONTENT_TAGS];
+                    for (let i = 0; i < numNewTags && availableForSelection.length > 0; i++) {
+                        const randomIndex = Math.floor(Math.random() * availableForSelection.length);
+                        const selectedTag = availableForSelection.splice(randomIndex, 1)[0];
+                        selectedTags.push(selectedTag);
+                        tagUsageStats[selectedTag] = (tagUsageStats[selectedTag] || 0) + 1;
+                    }
+                    let finalTags = selectedTags;
+                    if (preserveExisting && bookmark.tags && bookmark.tags.length > 0) {
+                        finalTags = [...new Set([...bookmark.tags, ...selectedTags])];
+                    }
+                    const updateResult = await serviceWorker.db.updateBookmark(bookmark.id, { tags: finalTags });
+                    if (updateResult.success) {
+                        updateCount++;
+                        if (updateCount <= 5 || updateCount % 20 === 0) {
+                            console.log(`🏷️ [${updateCount}/${bookmarksToUpdate.length}] Added [${selectedTags.join(', ')}] to: "${bookmark.text?.substring(0, 50)}..."`);
+                        }
+                    }
+                }
+                console.log('🎉 Random tag addition completed!');
+                console.log(`✅ Updated ${updateCount}/${bookmarksToUpdate.length} bookmarks`);
+                console.log(`📊 Tag usage statistics:`, tagUsageStats);
+                return { success: true, updated: updateCount, tagStats: tagUsageStats, totalBookmarks: allBookmarks.length };
+            }
+            catch (error) {
+                console.error('❌ Error adding random tags:', error);
+                return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+            }
+        },
+        getTagStats: async () => {
+            try {
+                await serviceWorker.initialize();
+                if (!serviceWorker.db) {
+                    console.error('❌ Database not initialized');
+                    return { success: false, error: 'Database not initialized' };
+                }
+                const result = await serviceWorker.db.getAllBookmarks({ limit: 10000 });
+                if (!result.success || !result.data) {
+                    return { success: false, error: result.error };
+                }
+                const bookmarks = result.data;
+                const tagCounts = {};
+                let taggedCount = 0;
+                bookmarks.forEach(bookmark => {
+                    if (bookmark.tags && bookmark.tags.length > 0) {
+                        taggedCount++;
+                        bookmark.tags.forEach(tag => {
+                            tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+                        });
+                    }
+                });
+                const stats = {
+                    totalBookmarks: bookmarks.length,
+                    taggedBookmarks: taggedCount,
+                    untaggedBookmarks: bookmarks.length - taggedCount,
+                    taggedPercentage: Math.round((taggedCount / bookmarks.length) * 100),
+                    uniqueTags: Object.keys(tagCounts).length,
+                    tagDistribution: Object.entries(tagCounts)
+                        .sort(([, a], [, b]) => b - a)
+                        .reduce((obj, [tag, count]) => ({ ...obj, [tag]: count }), {})
+                };
+                console.log('📊 === TAG STATISTICS ===');
+                console.log(`Total bookmarks: ${stats.totalBookmarks}`);
+                console.log(`Tagged bookmarks: ${stats.taggedBookmarks} (${stats.taggedPercentage}%)`);
+                console.log(`Untagged bookmarks: ${stats.untaggedBookmarks}`);
+                console.log(`Unique tags: ${stats.uniqueTags}`);
+                console.log('Top 10 tags:', Object.entries(stats.tagDistribution).slice(0, 10));
+                return { success: true, stats };
+            }
+            catch (error) {
+                console.error('❌ Error getting tag statistics:', error);
+                return { success: false, error: error.message };
+            }
+        },
+        // Convenience shortcuts
+        addRandomTagsQuick: () => self.testXSaved.addRandomTags(1, 3, true, true),
+        addRandomTagsExtensive: () => self.testXSaved.addRandomTags(3, 5, true, true)
     };
+    // Also expose functions globally for direct access
+    self.addRandomTags = self.testXSaved.addRandomTags;
+    self.getTagStats = self.testXSaved.getTagStats;
     console.log('🔧 === XSaved v2 Debug Console ===');
     console.log('Available commands:');
     console.log('  • self.testXSaved.inspectDB() - Database overview');
@@ -4383,6 +4495,10 @@ if (typeof self !== 'undefined') {
     console.log('  • self.testXSaved.clearDB() - Clear all data (WARNING!)');
     console.log('  • self.testXSaved.forceReinit() - Reinitialize database');
     console.log('  • self.testXSaved.verifyDatabase() - Basic verification');
+    console.log('🏷️ TAG FUNCTIONS (DEV):');
+    console.log('  • addRandomTags() or self.testXSaved.addRandomTags() - Add random tags');
+    console.log('  • addSmartTags() or self.testXSaved.addSmartTags() - Add content-based tags');
+    console.log('  • getTagStats() or self.testXSaved.getTagStats() - Show tag statistics');
 }
 
 })();
