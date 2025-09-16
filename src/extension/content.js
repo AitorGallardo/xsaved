@@ -1545,6 +1545,9 @@ class XSavedContentScript {
       return; // Toggle behavior - close if already open
     }
 
+    // Track current sort state
+    this.currentSort = this.currentSort || { field: 'created_at', order: 'desc' };
+
     // Create sort menu
     const sortMenu = document.createElement('div');
     sortMenu.id = 'xsaved-sort-menu';
@@ -1557,46 +1560,65 @@ class XSavedContentScript {
       border-radius: 8px;
       box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
       z-index: 10002;
-      min-width: 200px;
+      min-width: 180px;
       margin-top: 8px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     `;
 
-    const sortOptions = [
-      { label: 'Created At', value: 'created_at-desc', icon: '↓' },
-      { label: 'Created At', value: 'created_at-asc', icon: '↑' },
-      { label: 'Bookmarked At', value: 'bookmarked_at-desc', icon: '↓' },
-      { label: 'Bookmarked At', value: 'bookmarked_at-asc', icon: '↑' }
+    const sortFields = [
+      { field: 'created_at', label: 'Created At' },
+      { field: 'bookmarked_at', label: 'Bookmarked At' }
     ];
 
-    sortOptions.forEach((option, index) => {
+    sortFields.forEach((fieldInfo, index) => {
       const menuItem = document.createElement('div');
+      const isActive = this.currentSort.field === fieldInfo.field;
+      const currentOrder = isActive ? this.currentSort.order : 'desc';
+      const arrow = currentOrder === 'desc' ? '↓' : '↑';
+      
       menuItem.style.cssText = `
         display: flex;
         align-items: center;
+        justify-content: space-between;
         padding: 12px 16px;
-        color: white;
+        color: ${isActive ? '#3B82F6' : 'white'};
         cursor: pointer;
         transition: background-color 0.2s ease;
-        border-bottom: ${index < sortOptions.length - 1 ? '1px solid #38444d' : 'none'};
+        border-bottom: ${index < sortFields.length - 1 ? '1px solid #38444d' : 'none'};
+        background-color: ${isActive ? 'rgba(59, 130, 246, 0.1)' : 'transparent'};
       `;
 
       menuItem.innerHTML = `
-        <span style="margin-right: 8px; font-size: 16px;">${option.icon}</span>
-        <span style="font-size: 14px; font-weight: 500;">${option.label}</span>
+        <span style="font-size: 14px; font-weight: ${isActive ? '600' : '500'};">${fieldInfo.label}</span>
+        <span style="font-size: 16px; font-weight: bold; margin-left: 8px;">${arrow}</span>
       `;
 
       menuItem.addEventListener('mouseenter', () => {
-        menuItem.style.backgroundColor = '#1a3a4a';
+        if (!isActive) {
+          menuItem.style.backgroundColor = '#1a3a4a';
+        }
       });
 
       menuItem.addEventListener('mouseleave', () => {
-        menuItem.style.backgroundColor = 'transparent';
+        menuItem.style.backgroundColor = isActive ? 'rgba(59, 130, 246, 0.1)' : 'transparent';
       });
 
       menuItem.addEventListener('click', () => {
-        console.log('🔄 Sort option selected:', option.value);
-        this.applySorting(option.value, bookmarks);
+        // If clicking the same field, toggle order; if different field, use desc
+        let newOrder;
+        if (this.currentSort.field === fieldInfo.field) {
+          newOrder = this.currentSort.order === 'desc' ? 'asc' : 'desc';
+        } else {
+          newOrder = 'desc'; // Default to desc for new field
+        }
+        
+        const sortValue = `${fieldInfo.field}-${newOrder}`;
+        console.log('🔄 Sort option selected:', sortValue);
+        
+        // Update current sort state
+        this.currentSort = { field: fieldInfo.field, order: newOrder };
+        
+        this.applySorting(sortValue, bookmarks);
         sortMenu.remove();
       });
 
@@ -1621,37 +1643,74 @@ class XSavedContentScript {
 
   /**
    * Apply sorting to bookmarks and update grid
-   * @param {string} sortType - Sort type (date-desc, date-asc, etc.)
-   * @param {Array} bookmarks - Bookmarks to sort
+   * @param {string} sortType - Sort type (created_at-desc, bookmarked_at-asc, etc.)
+   * @param {Array} bookmarks - Bookmarks to sort (optional, uses this.allBookmarks if not provided)
    */
-  applySorting(sortType, bookmarks) {
-    let sortedBookmarks = [...bookmarks];
+  applySorting(sortType, bookmarks = null) {
+    // Use all bookmarks if no specific array provided, or filter based on current tags
+    const sourceBookmarks = bookmarks || this.getCurrentFilteredBookmarks();
+    let sortedBookmarks = [...sourceBookmarks];
+
+    console.log(`🔄 Sorting ${sortedBookmarks.length} bookmarks by ${sortType}`);
 
     switch (sortType) {
       case 'created_at-desc':
-        sortedBookmarks.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+        sortedBookmarks.sort((a, b) => {
+          const dateA = new Date(a.created_at || a.bookmarked_at || 0);
+          const dateB = new Date(b.created_at || b.bookmarked_at || 0);
+          return dateB.getTime() - dateA.getTime();
+        });
         break;
       case 'created_at-asc':
-        sortedBookmarks.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+        sortedBookmarks.sort((a, b) => {
+          const dateA = new Date(a.created_at || a.bookmarked_at || 0);
+          const dateB = new Date(b.created_at || b.bookmarked_at || 0);
+          return dateA.getTime() - dateB.getTime();
+        });
         break;
       case 'bookmarked_at-desc':
-        sortedBookmarks.sort((a, b) => new Date(b.bookmarked_at || 0) - new Date(a.bookmarked_at || 0));
+        sortedBookmarks.sort((a, b) => {
+          const dateA = new Date(a.bookmarked_at || a.created_at || 0);
+          const dateB = new Date(b.bookmarked_at || b.created_at || 0);
+          return dateB.getTime() - dateA.getTime();
+        });
         break;
       case 'bookmarked_at-asc':
-        sortedBookmarks.sort((a, b) => new Date(a.bookmarked_at || 0) - new Date(b.bookmarked_at || 0));
+        sortedBookmarks.sort((a, b) => {
+          const dateA = new Date(a.bookmarked_at || a.created_at || 0);
+          const dateB = new Date(b.bookmarked_at || b.created_at || 0);
+          return dateA.getTime() - dateB.getTime();
+        });
         break;
       default:
         console.warn('Unknown sort type:', sortType);
         return;
     }
 
-    console.log(`✅ Applied sorting: ${sortType}`);
+    console.log(`✅ Applied sorting: ${sortType} (${sortedBookmarks.length} bookmarks)`);
     
     // Update the grid with sorted bookmarks
     this.updateGridContent(sortedBookmarks);
+  }
+
+  /**
+   * Get currently filtered bookmarks based on active tag selection
+   * @returns {Array} Filtered bookmarks array
+   */
+  getCurrentFilteredBookmarks() {
+    if (!this.currentSelectedTags || this.currentSelectedTags.has('All')) {
+      return this.allBookmarks;
+    }
     
-    // Update the stored bookmarks for filtering
-    this.allBookmarks = sortedBookmarks;
+    const selectedTags = Array.from(this.currentSelectedTags);
+    return this.allBookmarks.filter(bookmark => {
+      const bookmarkTags = bookmark.tags || [];
+      return selectedTags.some(selectedTag => 
+        bookmarkTags.some(bookmarkTag => 
+          bookmarkTag.toLowerCase().includes(selectedTag.toLowerCase())
+        )
+      );
+    });
   }
 
   createBookmarkCard(bookmark) {
