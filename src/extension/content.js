@@ -1038,6 +1038,12 @@ class XSavedContentScript {
     
     // Store container reference for filtering
     this.currentGridContainer = container;
+    
+    // Clean up any existing fixed header to prevent sizing issues
+    const existingHeader = document.getElementById('xsaved-fixed-header');
+    if (existingHeader) {
+      existingHeader.remove();
+    }
 
     // Helper function to group bookmarks by month/year
     const groupBookmarksByDate = (bookmarks) => {
@@ -1365,53 +1371,134 @@ class XSavedContentScript {
       });
       
       console.log(`📋 Filtered to ${filteredBookmarks.length} bookmarks from ${this.allBookmarks.length} total`);
-      
-      // Show filtering status in the UI
-      this.showFilteringStatus(selectedTags, filteredBookmarks.length, this.allBookmarks.length);
     }
     
-    // Re-render the grid with filtered bookmarks
+    // Update only the grid content, not the entire interface
     if (container) {
-      this.renderBookmarksGrid(container, filteredBookmarks);
+      this.updateGridContent(filteredBookmarks);
     } else {
       console.error('❌ Grid container not available for filtering');
     }
   }
 
   /**
-   * Show filtering status in the UI
-   * @param {Array} selectedTags - Currently selected tags
-   * @param {number} filteredCount - Number of filtered bookmarks
-   * @param {number} totalCount - Total number of bookmarks
+   * Update only the grid content without recreating the navbar
+   * @param {Array} bookmarks - Filtered bookmarks to display
    */
-  showFilteringStatus(selectedTags, filteredCount, totalCount) {
-    // Find or create status element in the header
-    let statusElement = document.getElementById('xsaved-filter-status');
+  updateGridContent(bookmarks) {
+    console.log(`🔄 Updating grid content with ${bookmarks.length} bookmarks`);
     
-    if (!statusElement) {
-      statusElement = document.createElement('div');
-      statusElement.id = 'xsaved-filter-status';
-      statusElement.style.cssText = `
-        font-size: 14px;
-        color: #666;
-        margin-left: 16px;
-        font-weight: 500;
-      `;
+    // Find the existing grid container
+    const grid = document.getElementById('xsaved-bookmarks-grid');
+    if (!grid) {
+      console.error('❌ Grid element not found');
+      return;
+    }
+    
+    // Helper function to group bookmarks by month/year
+    const groupBookmarksByDate = (bookmarks) => {
+      const grouped = bookmarks.reduce((acc, bookmark) => {
+        const date = new Date(bookmark.created_at);
+        const monthYear = `${date.getFullYear()}-${date.getMonth()}`;
+        
+        if (!acc[monthYear]) {
+          acc[monthYear] = {
+            date: new Date(date.getFullYear(), date.getMonth(), 1),
+            bookmarks: []
+          };
+        }
+        
+        acc[monthYear].bookmarks.push(bookmark);
+        return acc;
+      }, {});
       
-      // Add to the header
-      const header = document.querySelector('#xsaved-fixed-header .xsaved-tag-selector').parentElement;
-      if (header) {
-        header.appendChild(statusElement);
-      }
-    }
+      // Convert to array and sort by date (newest first)
+      return Object.values(grouped).sort((a, b) => b.date.getTime() - a.date.getTime());
+    };
+
+    // Convert grouped bookmarks to grid items with separators
+    const createGridItems = (bookmarks) => {
+      const grouped = groupBookmarksByDate(bookmarks);
+      const items = [];
+      let dealIndex = 0;
+      
+      grouped.forEach((group, groupIndex) => {
+        // Add separator for each group (except the very first one)
+        if (groupIndex > 0) {
+          items.push({
+            type: 'separator',
+            date: group.date
+          });
+        }
+        
+        // Add all bookmarks in this group
+        group.bookmarks.forEach(bookmark => {
+          items.push({
+            type: 'bookmark',
+            bookmark: bookmark,
+            dealIndex
+          });
+          dealIndex++;
+        });
+      });
+      
+      return items;
+    };
+
+    // Create date separator element
+    const createDateSeparator = (date) => {
+      const separator = document.createElement('div');
+      separator.style.cssText = `
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: center;
+        margin: 24px 0;
+        padding-left: 16px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      `;
+
+      const dateText = document.createElement('span');
+      dateText.style.cssText = `
+        font-size: 14px;
+        font-weight: 500;
+        color: #9CA3AF;
+        white-space: nowrap;
+      `;
+      dateText.textContent = date.toLocaleDateString('en-US', { 
+        month: 'long', 
+        year: 'numeric' 
+      });
+
+      const line = document.createElement('div');
+      line.style.cssText = `
+        flex-grow: 1;
+        height: 1px;
+        margin-left: 16px;
+        background: linear-gradient(to right, #4B5563, transparent);
+      `;
+
+      separator.appendChild(dateText);
+      separator.appendChild(line);
+      return separator;
+    };
+
+    // Clear and re-populate grid
+    grid.innerHTML = '';
     
-    // Update status text
-    if (selectedTags.includes('All') || selectedTags.length === 0) {
-      statusElement.textContent = `Showing all ${totalCount} bookmarks`;
-    } else {
-      statusElement.textContent = `Filtered by [${selectedTags.join(', ')}]: ${filteredCount}/${totalCount} bookmarks`;
-    }
+    const gridItems = createGridItems(bookmarks);
+    gridItems.forEach(item => {
+      if (item.type === 'separator') {
+        const separator = createDateSeparator(item.date);
+        grid.appendChild(separator);
+      } else {
+        const card = this.createBookmarkCard(item.bookmark);
+        grid.appendChild(card);
+      }
+    });
+    
+    console.log(`✅ Grid content updated with ${bookmarks.length} bookmarks`);
   }
+
 
   createBookmarkCard(bookmark) {
     // Safe property access with fallbacks
@@ -1676,21 +1763,8 @@ class XSavedContentScript {
       right: 16px;
     `;
 
-    if (safeBookmark.tags && safeBookmark.tags.length > 0) {
-      safeBookmark.tags.forEach(tag => {
-        const tagElement = document.createElement('span');
-        tagElement.style.cssText = `
-          background: rgba(29, 161, 242, 0.2);
-          color: #1DA1F2;
-          padding: 4px 8px;
-          border-radius: 12px;
-          font-size: 12px;
-          font-weight: 500;
-        `;
-        tagElement.textContent = `#${tag}`;
-        tagsContainer.appendChild(tagElement);
-      });
-    }
+    // Don't render tags in cards - tags are for filtering only
+    // Tags display is handled by the navbar, not individual cards
 
     // Assemble content
     contentContainer.appendChild(profileSection);
