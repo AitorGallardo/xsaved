@@ -1252,42 +1252,75 @@ class XSavedContentScript {
       width: 300px;
     `;
 
-    const exportButton = document.createElement('button');
-    exportButton.innerHTML = `
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 8px;">
+    // Sort button
+    const sortButton = document.createElement('button');
+    sortButton.innerHTML = `
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z"/>
+      </svg>
+    `;
+    sortButton.style.cssText = `
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 12px;
+      background: rgba(59, 130, 246, 0.2);
+      border: 1px solid rgba(59, 130, 246, 0.4);
+      border-radius: 20px;
+      color: #3B82F6;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-right: 8px;
+    `;
+
+    sortButton.addEventListener('mouseenter', () => {
+      sortButton.style.background = 'rgba(59, 130, 246, 0.3)';
+    });
+    sortButton.addEventListener('mouseleave', () => {
+      sortButton.style.background = 'rgba(59, 130, 246, 0.2)';
+    });
+
+    sortButton.addEventListener('click', () => {
+      console.log('🔄 Sort button clicked');
+      this.showSortMenu(sortButton, bookmarks);
+    });
+
+    // Download button
+    const downloadButton = document.createElement('button');
+    downloadButton.innerHTML = `
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
         <path d="M12 2C13.1 2 14 2.9 14 4V12L16.5 9.5C16.9 9.1 17.5 9.1 17.9 9.5C18.3 9.9 18.3 10.5 17.9 10.9L12.7 16.1C12.3 16.5 11.7 16.5 11.3 16.1L6.1 10.9C5.7 10.5 5.7 9.9 6.1 9.5C6.5 9.1 7.1 9.1 7.5 9.5L10 12V4C10 2.9 10.9 2 12 2Z"/>
         <path d="M20 20H4V18H20V20Z"/>
       </svg>
-      Export
     `;
-    exportButton.style.cssText = `
+    downloadButton.style.cssText = `
       display: flex;
       align-items: center;
-      padding: 8px 16px;
+      justify-content: center;
+      padding: 8px 12px;
       background: rgba(34, 197, 94, 0.2);
       border: 1px solid rgba(34, 197, 94, 0.4);
       border-radius: 20px;
       color: #22C55E;
-      font-size: 14px;
-      font-weight: 500;
       cursor: pointer;
       transition: all 0.2s ease;
     `;
 
-    exportButton.addEventListener('mouseenter', () => {
-      exportButton.style.background = 'rgba(34, 197, 94, 0.3)';
+    downloadButton.addEventListener('mouseenter', () => {
+      downloadButton.style.background = 'rgba(34, 197, 94, 0.3)';
     });
-    exportButton.addEventListener('mouseleave', () => {
-      exportButton.style.background = 'rgba(34, 197, 94, 0.2)';
+    downloadButton.addEventListener('mouseleave', () => {
+      downloadButton.style.background = 'rgba(34, 197, 94, 0.2)';
     });
 
-    exportButton.addEventListener('click', () => {
-      console.log('📤 Export button clicked');
+    downloadButton.addEventListener('click', () => {
+      console.log('📤 Download button clicked');
       this.showExportDialog(bookmarks);
     });
 
     rightSide.appendChild(searchBox);
-    rightSide.appendChild(exportButton);
+    rightSide.appendChild(sortButton);
+    rightSide.appendChild(downloadButton);
 
     header.appendChild(tagSelector);
     header.appendChild(rightSide);
@@ -1500,6 +1533,127 @@ class XSavedContentScript {
     console.log(`✅ Grid content updated with ${bookmarks.length} bookmarks`);
   }
 
+  /**
+   * Show sort menu dropdown
+   * @param {Element} sortButton - The sort button element
+   * @param {Array} bookmarks - Current bookmarks array
+   */
+  showSortMenu(sortButton, bookmarks) {
+    // Remove existing sort menu if any
+    const existingMenu = document.getElementById('xsaved-sort-menu');
+    if (existingMenu) {
+      existingMenu.remove();
+      return; // Toggle behavior - close if already open
+    }
+
+    // Create sort menu
+    const sortMenu = document.createElement('div');
+    sortMenu.id = 'xsaved-sort-menu';
+    sortMenu.style.cssText = `
+      position: absolute;
+      top: 100%;
+      right: 0;
+      background: #15202b;
+      border: 1px solid #38444d;
+      border-radius: 8px;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+      z-index: 10002;
+      min-width: 200px;
+      margin-top: 8px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    `;
+
+    const sortOptions = [
+      { label: 'Created At', value: 'created_at-desc', icon: '↓' },
+      { label: 'Created At', value: 'created_at-asc', icon: '↑' },
+      { label: 'Bookmarked At', value: 'bookmarked_at-desc', icon: '↓' },
+      { label: 'Bookmarked At', value: 'bookmarked_at-asc', icon: '↑' }
+    ];
+
+    sortOptions.forEach((option, index) => {
+      const menuItem = document.createElement('div');
+      menuItem.style.cssText = `
+        display: flex;
+        align-items: center;
+        padding: 12px 16px;
+        color: white;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+        border-bottom: ${index < sortOptions.length - 1 ? '1px solid #38444d' : 'none'};
+      `;
+
+      menuItem.innerHTML = `
+        <span style="margin-right: 8px; font-size: 16px;">${option.icon}</span>
+        <span style="font-size: 14px; font-weight: 500;">${option.label}</span>
+      `;
+
+      menuItem.addEventListener('mouseenter', () => {
+        menuItem.style.backgroundColor = '#1a3a4a';
+      });
+
+      menuItem.addEventListener('mouseleave', () => {
+        menuItem.style.backgroundColor = 'transparent';
+      });
+
+      menuItem.addEventListener('click', () => {
+        console.log('🔄 Sort option selected:', option.value);
+        this.applySorting(option.value, bookmarks);
+        sortMenu.remove();
+      });
+
+      sortMenu.appendChild(menuItem);
+    });
+
+    // Position menu relative to sort button
+    sortButton.style.position = 'relative';
+    sortButton.appendChild(sortMenu);
+
+    // Close menu when clicking outside
+    setTimeout(() => {
+      const handleOutsideClick = (e) => {
+        if (!sortMenu.contains(e.target) && !sortButton.contains(e.target)) {
+          sortMenu.remove();
+          document.removeEventListener('click', handleOutsideClick);
+        }
+      };
+      document.addEventListener('click', handleOutsideClick);
+    }, 100);
+  }
+
+  /**
+   * Apply sorting to bookmarks and update grid
+   * @param {string} sortType - Sort type (date-desc, date-asc, etc.)
+   * @param {Array} bookmarks - Bookmarks to sort
+   */
+  applySorting(sortType, bookmarks) {
+    let sortedBookmarks = [...bookmarks];
+
+    switch (sortType) {
+      case 'created_at-desc':
+        sortedBookmarks.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+        break;
+      case 'created_at-asc':
+        sortedBookmarks.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+        break;
+      case 'bookmarked_at-desc':
+        sortedBookmarks.sort((a, b) => new Date(b.bookmarked_at || 0) - new Date(a.bookmarked_at || 0));
+        break;
+      case 'bookmarked_at-asc':
+        sortedBookmarks.sort((a, b) => new Date(a.bookmarked_at || 0) - new Date(b.bookmarked_at || 0));
+        break;
+      default:
+        console.warn('Unknown sort type:', sortType);
+        return;
+    }
+
+    console.log(`✅ Applied sorting: ${sortType}`);
+    
+    // Update the grid with sorted bookmarks
+    this.updateGridContent(sortedBookmarks);
+    
+    // Update the stored bookmarks for filtering
+    this.allBookmarks = sortedBookmarks;
+  }
 
   createBookmarkCard(bookmark) {
     // Safe property access with fallbacks
