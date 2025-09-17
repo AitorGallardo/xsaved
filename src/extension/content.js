@@ -1438,6 +1438,8 @@ class XSavedContentScript {
     // Update only the grid content, not the entire interface
     if (container) {
       this.updateGridContent(filteredBookmarks);
+      // Scroll to top after filtering
+      this.scrollToTopOfGrid();
     } else {
       console.error('❌ Grid container not available for filtering');
     }
@@ -1684,6 +1686,16 @@ class XSavedContentScript {
   }
 
   /**
+   * Scroll to top of the grid container
+   */
+  scrollToTopOfGrid() {
+    const gridOverlay = document.getElementById('xsaved-grid-overlay');
+    if (gridOverlay) {
+      gridOverlay.scrollTo({ top: 0, behavior: 'instant' });
+    }
+  }
+
+  /**
    * Apply sorting to bookmarks and update grid
    * @param {string} sortType - Sort type (created_at-desc, bookmarked_at-asc, etc.)
    * @param {Array} bookmarks - Bookmarks to sort (optional, triggers fresh database query if not provided)
@@ -1711,6 +1723,8 @@ class XSavedContentScript {
       });
       
       this.updateGridContent(sortedBookmarks);
+      // Scroll to top after sorting
+      this.scrollToTopOfGrid();
     } else {
       // No bookmarks provided - fetch fresh sorted data from database
       console.log(`🔄 Fetching sorted data from database: ${sortBy} ${sortOrder}`);
@@ -1741,6 +1755,8 @@ class XSavedContentScript {
           
           console.log(`✅ Applied database sorting: ${sortType} (${sortedBookmarks.length} bookmarks)`);
           this.updateGridContent(sortedBookmarks);
+          // Scroll to top after sorting
+          this.scrollToTopOfGrid();
         } else {
           console.error('❌ Failed to fetch sorted bookmarks:', response);
         }
@@ -2440,6 +2456,9 @@ class XSavedContentScript {
         grid.appendChild(card);
       }
     });
+    
+    // Scroll to top after search/filtering
+    this.scrollToTopOfGrid();
   }
 
   setupBookmarksPageObserver() {
