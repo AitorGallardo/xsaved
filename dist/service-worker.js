@@ -174,13 +174,21 @@ class XSavedDexieDB extends import_wrapper_prod {
             }
             // Ensure both timestamps are valid ISO strings
             const now = new Date().toISOString();
-            if (!obj.created_at || !this.isValidISODate(obj.created_at)) {
+            if (!obj.created_at || !this.isValidDate(obj.created_at)) {
                 obj.created_at = now;
                 console.warn(`⚠️ Invalid created_at for ${obj.id}, using current time`);
             }
-            if (!obj.bookmarked_at || !this.isValidISODate(obj.bookmarked_at)) {
+            else if (!obj.created_at.includes('T')) {
+                // Convert Twitter format to ISO format
+                obj.created_at = new Date(obj.created_at).toISOString();
+            }
+            if (!obj.bookmarked_at || !this.isValidDate(obj.bookmarked_at)) {
                 obj.bookmarked_at = obj.created_at || now;
                 console.warn(`⚠️ Invalid bookmarked_at for ${obj.id}, using created_at`);
+            }
+            else if (!obj.bookmarked_at.includes('T')) {
+                // Convert Twitter format to ISO format
+                obj.bookmarked_at = new Date(obj.bookmarked_at).toISOString();
             }
             console.log(`🔄 Creating bookmark: ${obj.id}`);
         });
@@ -474,13 +482,13 @@ class XSavedDexieDB extends import_wrapper_prod {
         }
     }
     /**
-     * Validate ISO date string
+     * Validate date string (accepts both ISO and Twitter formats)
      */
-    isValidISODate(dateString) {
+    isValidDate(dateString) {
         if (!dateString || typeof dateString !== 'string')
             return false;
         const date = new Date(dateString);
-        return !isNaN(date.getTime()) && dateString.includes('T') && dateString.includes('Z');
+        return !isNaN(date.getTime()) && date.getTime() > 0;
     }
     /**
      * Clear all data (for testing/reset)

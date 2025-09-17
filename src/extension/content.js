@@ -1036,6 +1036,11 @@ class XSavedContentScript {
         // Store all bookmarks for filtering
         this.allBookmarks = bookmarks;
         
+        // Initialize currentSort if not set
+        if (!this.currentSort) {
+          this.currentSort = { field: 'created_at', order: 'desc' };
+        }
+        
         this.renderBookmarksGrid(container, bookmarks);
       } else {
         console.error('❌ Search failed:', response);
@@ -1058,8 +1063,13 @@ class XSavedContentScript {
 
     // Helper function to group bookmarks by month/year
     const groupBookmarksByDate = (bookmarks) => {
+      // Ensure currentSort has a default value
+      if (!this.currentSort) {
+        this.currentSort = { field: 'created_at', order: 'desc' };
+      }
+      
       // Use the same date field that was used for sorting
-      const dateField = this.currentSort?.field === 'bookmarked_at' ? 'bookmarked_at' : 'created_at';
+      const dateField = this.currentSort.field === 'bookmarked_at' ? 'bookmarked_at' : 'created_at';
       
       const grouped = bookmarks.reduce((acc, bookmark) => {
         const date = new Date(bookmark[dateField] || bookmark.created_at || bookmark.bookmarked_at);
@@ -1077,7 +1087,7 @@ class XSavedContentScript {
       }, {});
       
       // Respect current sort order instead of hardcoding newest first
-      const sortDirection = this.currentSort?.order === 'asc' ? 1 : -1;
+      const sortDirection = this.currentSort.order === 'asc' ? 1 : -1;
       return Object.values(grouped).sort((a, b) => 
         sortDirection * (a.date.getTime() - b.date.getTime())
       );
@@ -1090,8 +1100,10 @@ class XSavedContentScript {
       let dealIndex = 0;
       
       grouped.forEach((group, groupIndex) => {
-        // Add separator for each group (except the very first one)
-        if (groupIndex > 0) {
+        // Add separator for each group
+        // Only show first separator if we have explicit sorting, otherwise skip first
+        const showFirstSeparator = this.currentSort && (this.currentSort.field !== 'created_at' || this.currentSort.order !== 'desc');
+        if (groupIndex > 0 || showFirstSeparator) {
           items.push({
             type: 'separator',
             date: group.date
@@ -1447,8 +1459,13 @@ class XSavedContentScript {
     
     // Helper function to group bookmarks by month/year
     const groupBookmarksByDate = (bookmarks) => {
+      // Ensure currentSort has a default value
+      if (!this.currentSort) {
+        this.currentSort = { field: 'created_at', order: 'desc' };
+      }
+      
       // Use the same date field that was used for sorting
-      const dateField = this.currentSort?.field === 'bookmarked_at' ? 'bookmarked_at' : 'created_at';
+      const dateField = this.currentSort.field === 'bookmarked_at' ? 'bookmarked_at' : 'created_at';
       
       const grouped = bookmarks.reduce((acc, bookmark) => {
         const date = new Date(bookmark[dateField] || bookmark.created_at || bookmark.bookmarked_at);
@@ -1466,7 +1483,7 @@ class XSavedContentScript {
       }, {});
       
       // Respect current sort order instead of hardcoding newest first
-      const sortDirection = this.currentSort?.order === 'asc' ? 1 : -1;
+      const sortDirection = this.currentSort.order === 'asc' ? 1 : -1;
       return Object.values(grouped).sort((a, b) => 
         sortDirection * (a.date.getTime() - b.date.getTime())
       );
@@ -1479,8 +1496,10 @@ class XSavedContentScript {
       let dealIndex = 0;
       
       grouped.forEach((group, groupIndex) => {
-        // Add separator for each group (except the very first one)
-        if (groupIndex > 0) {
+        // Add separator for each group
+        // Only show first separator if we have explicit sorting, otherwise skip first
+        const showFirstSeparator = this.currentSort && (this.currentSort.field !== 'created_at' || this.currentSort.order !== 'desc');
+        if (groupIndex > 0 || showFirstSeparator) {
           items.push({
             type: 'separator',
             date: group.date
@@ -2348,8 +2367,10 @@ class XSavedContentScript {
       let dealIndex = 0;
       
       grouped.forEach((group, groupIndex) => {
-        // Add separator for each group (except the very first one)
-        if (groupIndex > 0) {
+        // Add separator for each group
+        // Only show first separator if we have explicit sorting, otherwise skip first
+        const showFirstSeparator = this.currentSort && (this.currentSort.field !== 'created_at' || this.currentSort.order !== 'desc');
+        if (groupIndex > 0 || showFirstSeparator) {
           items.push({
             type: 'separator',
             date: group.date
