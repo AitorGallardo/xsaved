@@ -121,9 +121,17 @@ export class XSavedDexieDB extends Dexie {
         obj.textTokens = this.tokenizeText(obj.text || '');
       }
       
-      // Ensure required timestamps
-      if (!obj.bookmarked_at) {
-        obj.bookmarked_at = new Date().toISOString();
+      // Ensure both timestamps are valid ISO strings
+      const now = new Date().toISOString();
+      
+      if (!obj.created_at || !this.isValidISODate(obj.created_at)) {
+        obj.created_at = now;
+        console.warn(`⚠️ Invalid created_at for ${obj.id}, using current time`);
+      }
+      
+      if (!obj.bookmarked_at || !this.isValidISODate(obj.bookmarked_at)) {
+        obj.bookmarked_at = obj.created_at || now;
+        console.warn(`⚠️ Invalid bookmarked_at for ${obj.id}, using created_at`);
       }
       
       console.log(`🔄 Creating bookmark: ${obj.id}`);
@@ -454,6 +462,15 @@ export class XSavedDexieDB extends Dexie {
       console.error('❌ Failed to get database stats:', error);
       return { bookmarks: 0, tags: 0, collections: 0 };
     }
+  }
+
+  /**
+   * Validate ISO date string
+   */
+  private isValidISODate(dateString: string): boolean {
+    if (!dateString || typeof dateString !== 'string') return false;
+    const date = new Date(dateString);
+    return !isNaN(date.getTime()) && dateString.includes('T') && dateString.includes('Z');
   }
 
   /**

@@ -10,7 +10,7 @@
  */
 export function getSortIndexDate(sortIndex: string | number | bigint): Date {
     // Twitter epoch: January 1, 2010 00:00:00 UTC (in milliseconds)
-    const TWITTER_EPOCH = 1288834974657;
+    const TWITTER_EPOCH = 1262304000000;
     
     try {
         // Convert to BigInt for precise calculation

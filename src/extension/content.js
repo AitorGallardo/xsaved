@@ -58,6 +58,9 @@ const safeRuntimeMessage = (message, callback) => {
   }
 };
 
+// ===== CONFIGURATION =====
+const DEFAULT_BOOKMARK_LIMIT = 3000; // Adjust this value as needed
+
 // ===== INITIALIZATION =====
 class XSavedContentScript {
   constructor() {
@@ -988,11 +991,19 @@ class XSavedContentScript {
     }
   }
 
+  /**
+   * Get bookmark limit from configuration
+   * @returns {number} Bookmark limit
+   */
+  getBookmarkLimit() {
+    return DEFAULT_BOOKMARK_LIMIT;
+  }
+
   async loadBookmarksGrid(container) {
     // Get recent bookmarks from service worker
     safeRuntimeMessage({ 
       action: 'searchBookmarks', 
-      query: { text: '', limit: 10000, sortBy: 'created_at', sortOrder: 'desc' }
+      query: { text: '', limit: this.getBookmarkLimit(), sortBy: 'created_at', sortOrder: 'desc' }
     }, (response) => {
       if (response?.success) {
         let bookmarks = [];
@@ -1047,8 +1058,11 @@ class XSavedContentScript {
 
     // Helper function to group bookmarks by month/year
     const groupBookmarksByDate = (bookmarks) => {
+      // Use the same date field that was used for sorting
+      const dateField = this.currentSort?.field === 'bookmarked_at' ? 'bookmarked_at' : 'created_at';
+      
       const grouped = bookmarks.reduce((acc, bookmark) => {
-        const date = new Date(bookmark.created_at);
+        const date = new Date(bookmark[dateField] || bookmark.created_at || bookmark.bookmarked_at);
         const monthYear = `${date.getFullYear()}-${date.getMonth()}`;
         
         if (!acc[monthYear]) {
@@ -1062,8 +1076,11 @@ class XSavedContentScript {
         return acc;
       }, {});
       
-      // Convert to array and sort by date (newest first)
-      return Object.values(grouped).sort((a, b) => b.date.getTime() - a.date.getTime());
+      // Respect current sort order instead of hardcoding newest first
+      const sortDirection = this.currentSort?.order === 'asc' ? 1 : -1;
+      return Object.values(grouped).sort((a, b) => 
+        sortDirection * (a.date.getTime() - b.date.getTime())
+      );
     };
 
     // Convert grouped bookmarks to grid items with separators
@@ -1430,8 +1447,11 @@ class XSavedContentScript {
     
     // Helper function to group bookmarks by month/year
     const groupBookmarksByDate = (bookmarks) => {
+      // Use the same date field that was used for sorting
+      const dateField = this.currentSort?.field === 'bookmarked_at' ? 'bookmarked_at' : 'created_at';
+      
       const grouped = bookmarks.reduce((acc, bookmark) => {
-        const date = new Date(bookmark.created_at);
+        const date = new Date(bookmark[dateField] || bookmark.created_at || bookmark.bookmarked_at);
         const monthYear = `${date.getFullYear()}-${date.getMonth()}`;
         
         if (!acc[monthYear]) {
@@ -1445,8 +1465,11 @@ class XSavedContentScript {
         return acc;
       }, {});
       
-      // Convert to array and sort by date (newest first)
-      return Object.values(grouped).sort((a, b) => b.date.getTime() - a.date.getTime());
+      // Respect current sort order instead of hardcoding newest first
+      const sortDirection = this.currentSort?.order === 'asc' ? 1 : -1;
+      return Object.values(grouped).sort((a, b) => 
+        sortDirection * (a.date.getTime() - b.date.getTime())
+      );
     };
 
     // Convert grouped bookmarks to grid items with separators
@@ -1644,53 +1667,66 @@ class XSavedContentScript {
   /**
    * Apply sorting to bookmarks and update grid
    * @param {string} sortType - Sort type (created_at-desc, bookmarked_at-asc, etc.)
-   * @param {Array} bookmarks - Bookmarks to sort (optional, uses this.allBookmarks if not provided)
+   * @param {Array} bookmarks - Bookmarks to sort (optional, triggers fresh database query if not provided)
    */
   applySorting(sortType, bookmarks = null) {
-    // Use all bookmarks if no specific array provided, or filter based on current tags
-    const sourceBookmarks = bookmarks || this.getCurrentFilteredBookmarks();
-    let sortedBookmarks = [...sourceBookmarks];
-
-    console.log(`🔄 Sorting ${sortedBookmarks.length} bookmarks by ${sortType}`);
-
-    switch (sortType) {
-      case 'created_at-desc':
-        sortedBookmarks.sort((a, b) => {
-          const dateA = new Date(a.created_at || a.bookmarked_at || 0);
-          const dateB = new Date(b.created_at || b.bookmarked_at || 0);
-          return dateB.getTime() - dateA.getTime();
-        });
-        break;
-      case 'created_at-asc':
-        sortedBookmarks.sort((a, b) => {
-          const dateA = new Date(a.created_at || a.bookmarked_at || 0);
-          const dateB = new Date(b.created_at || b.bookmarked_at || 0);
-          return dateA.getTime() - dateB.getTime();
-        });
-        break;
-      case 'bookmarked_at-desc':
-        sortedBookmarks.sort((a, b) => {
-          const dateA = new Date(a.bookmarked_at || a.created_at || 0);
-          const dateB = new Date(b.bookmarked_at || b.created_at || 0);
-          return dateB.getTime() - dateA.getTime();
-        });
-        break;
-      case 'bookmarked_at-asc':
-        sortedBookmarks.sort((a, b) => {
-          const dateA = new Date(a.bookmarked_at || a.created_at || 0);
-          const dateB = new Date(b.bookmarked_at || b.created_at || 0);
-          return dateA.getTime() - dateB.getTime();
-        });
-        break;
-      default:
-        console.warn('Unknown sort type:', sortType);
-        return;
-    }
-
-    console.log(`✅ Applied sorting: ${sortType} (${sortedBookmarks.length} bookmarks)`);
+    // Parse sort type
+    const [sortBy, sortOrder] = sortType.split('-');
     
-    // Update the grid with sorted bookmarks
-    this.updateGridContent(sortedBookmarks);
+    // Update current sort state
+    this.currentSort = { field: sortBy, order: sortOrder };
+    
+    console.log(`🔄 Applying sorting: ${sortType}`);
+
+    if (bookmarks) {
+      // If bookmarks provided, sort them client-side since we can't assume they're sorted
+      console.log(`🔄 Sorting ${bookmarks.length} provided bookmarks by ${sortType}`);
+      
+      const sortedBookmarks = [...bookmarks].sort((a, b) => {
+        const dateField = sortBy === 'bookmarked_at' ? 'bookmarked_at' : 'created_at';
+        const dateA = new Date(a[dateField] || a.created_at || a.bookmarked_at);
+        const dateB = new Date(b[dateField] || b.created_at || b.bookmarked_at);
+        
+        const comparison = dateA.getTime() - dateB.getTime();
+        return sortOrder === 'asc' ? comparison : -comparison;
+      });
+      
+      this.updateGridContent(sortedBookmarks);
+    } else {
+      // No bookmarks provided - fetch fresh sorted data from database
+      console.log(`🔄 Fetching sorted data from database: ${sortBy} ${sortOrder}`);
+      
+      chrome.runtime.sendMessage({
+        action: 'searchBookmarks', 
+        query: { 
+          text: '', 
+          limit: this.getBookmarkLimit(), // Configurable limit
+          sortBy: sortBy, 
+          sortOrder: sortOrder 
+        }
+      }, (response) => {
+        if (response?.success) {
+          let sortedBookmarks = [];
+          
+          // Handle different response structures
+          if (response.result?.bookmarks) {
+            sortedBookmarks = response.result.bookmarks.map(scoredBookmark => {
+              return scoredBookmark.bookmark || scoredBookmark;
+            });
+          } else if (Array.isArray(response.result)) {
+            sortedBookmarks = response.result;
+          } else {
+            console.warn('⚠️ Unexpected response structure:', response);
+            return;
+          }
+          
+          console.log(`✅ Applied database sorting: ${sortType} (${sortedBookmarks.length} bookmarks)`);
+          this.updateGridContent(sortedBookmarks);
+        } else {
+          console.error('❌ Failed to fetch sorted bookmarks:', response);
+        }
+      });
+    }
   }
 
   /**

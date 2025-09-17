@@ -305,3 +305,103 @@ const resetDatabase = () => {
 - **Permission errors**: Check if the extension has proper permissions
 - **Empty results**: Verify that bookmarks exist in the database
 - **Console errors**: Look for specific error messages in the console
+
+# DevTools Script: Query XSaved Tweets Sorted by bookmarked_at (Ascending)
+
+```javascript
+
+(async function queryTweetsSorted() {
+  console.log('🔍 Querying XSaved tweets sorted by bookmarked_at (ascending)...');
+  
+  try {
+    // Connect to the XSaved database
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('XSavedDB', 2);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+    
+    // Get all bookmarks sorted by bookmarked_at ascending
+    const transaction = db.transaction(['bookmarks'], 'readonly');
+    const store = transaction.objectStore('bookmarks');
+    const index = store.index('bookmarked_at');
+    
+    const bookmarks = await new Promise((resolve, reject) => {
+      const request = index.getAll();
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+    
+    console.log(`📊 Found ${bookmarks.length} bookmarks`);
+    
+    // Prepare data for table display
+    const tableData = bookmarks.map(bookmark => ({
+      'ID': bookmark.id,
+      'Author': `@${bookmark.author}`,
+      'Text': bookmark.text.substring(0, 80) + (bookmark.text.length > 80 ? '...' : ''),
+      'Created': new Date(bookmark.created_at).toLocaleDateString(),
+      'Bookmarked': new Date(bookmark.bookmarked_at).toLocaleDateString(),
+      'Tags': bookmark.tags?.join(', ') || 'None',
+      'Media': bookmark.media_urls?.length || 0
+    }));
+    
+    // Display in console table
+    console.table(tableData);
+    
+    // Also return raw data for further inspection
+    console.log('📝 Raw bookmark data available in `window.xsavedBookmarks`');
+    window.xsavedBookmarks = bookmarks;
+    
+    // Display summary stats
+    const stats = {
+      'Total Bookmarks': bookmarks.length,
+      'Date Range': bookmarks.length > 0 ? 
+        `${new Date(bookmarks[0].bookmarked_at).toLocaleDateString()} - ${new Date(bookmarks[bookmarks.length - 1].bookmarked_at).toLocaleDateString()}` : 
+        'No data',
+      'Unique Authors': new Set(bookmarks.map(b => b.author)).size,
+      'Total Tags': bookmarks.flatMap(b => b.tags || []).length,
+      'With Media': bookmarks.filter(b => b.media_urls?.length > 0).length
+    };
+    
+    console.log('📈 Summary Statistics:');
+    console.table([stats]);
+    
+    return {
+      bookmarks,
+      tableData,
+      stats,
+      message: `Successfully queried ${bookmarks.length} tweets sorted by bookmarked_at (ascending)`
+    };
+    
+  } catch (error) {
+    console.error('❌ Error querying database:', error);
+    
+    // Try alternative approach using Dexie if available
+    if (window.dexieDB || window.db) {
+      console.log('🔄 Trying Dexie approach...');
+      const dexie = window.dexieDB || window.db;
+      
+      try {
+        const bookmarks = await dexie.bookmarks
+          .orderBy('bookmarked_at')
+          .toArray();
+          
+        console.table(bookmarks.map(b => ({
+          'ID': b.id,
+          'Author': `@${b.author}`,
+          'Text': b.text.substring(0, 80) + '...',
+          'Bookmarked': new Date(b.bookmarked_at).toLocaleDateString(),
+          'Tags': b.tags?.join(', ') || 'None'
+        })));
+        
+        return bookmarks;
+      } catch (dexieError) {
+        console.error('❌ Dexie approach also failed:', dexieError);
+      }
+    }
+    
+    return null;
+  }
+})();
+
+```

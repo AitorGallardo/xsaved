@@ -172,9 +172,15 @@ class XSavedDexieDB extends import_wrapper_prod {
             if (!obj.textTokens) {
                 obj.textTokens = this.tokenizeText(obj.text || '');
             }
-            // Ensure required timestamps
-            if (!obj.bookmarked_at) {
-                obj.bookmarked_at = new Date().toISOString();
+            // Ensure both timestamps are valid ISO strings
+            const now = new Date().toISOString();
+            if (!obj.created_at || !this.isValidISODate(obj.created_at)) {
+                obj.created_at = now;
+                console.warn(`⚠️ Invalid created_at for ${obj.id}, using current time`);
+            }
+            if (!obj.bookmarked_at || !this.isValidISODate(obj.bookmarked_at)) {
+                obj.bookmarked_at = obj.created_at || now;
+                console.warn(`⚠️ Invalid bookmarked_at for ${obj.id}, using created_at`);
             }
             console.log(`🔄 Creating bookmark: ${obj.id}`);
         });
@@ -466,6 +472,15 @@ class XSavedDexieDB extends import_wrapper_prod {
             console.error('❌ Failed to get database stats:', error);
             return { bookmarks: 0, tags: 0, collections: 0 };
         }
+    }
+    /**
+     * Validate ISO date string
+     */
+    isValidISODate(dateString) {
+        if (!dateString || typeof dateString !== 'string')
+            return false;
+        const date = new Date(dateString);
+        return !isNaN(date.getTime()) && dateString.includes('T') && dateString.includes('Z');
     }
     /**
      * Clear all data (for testing/reset)
@@ -2691,7 +2706,7 @@ console.log('📡 XSaved v2 Fetcher utility loaded - ready for X.com API integra
  */
 function getSortIndexDate(sortIndex) {
     // Twitter epoch: January 1, 2010 00:00:00 UTC (in milliseconds)
-    const TWITTER_EPOCH = 1288834974657;
+    const TWITTER_EPOCH = 1262304000000;
     try {
         // Convert to BigInt for precise calculation
         const id = BigInt(sortIndex);
@@ -4480,11 +4495,237 @@ if (typeof self !== 'undefined') {
         },
         // Convenience shortcuts
         addRandomTagsQuick: () => self.testXSaved.addRandomTags(1, 3, true, true),
-        addRandomTagsExtensive: () => self.testXSaved.addRandomTags(3, 5, true, true)
+        addRandomTagsExtensive: () => self.testXSaved.addRandomTags(3, 5, true, true),
+        // ===============================
+        // DATE DEBUG FUNCTIONS
+        // ===============================
+        /**
+         * Debug bookmark dates - shows raw data and parsed dates
+         */
+        async debugBookmarkDates() {
+            try {
+                console.log('🔍 DEBUG: Analyzing bookmark dates...\n');
+                const result = await db.searchBookmarks({ limit: 10, sortBy: 'created_at', sortOrder: 'asc' });
+                if (!result.success || !result.data || result.data.length === 0) {
+                    console.log('❌ No bookmarks found or error occurred');
+                    return;
+                }
+                console.log(`📊 Analyzing ${result.data.length} bookmarks:\n`);
+                result.data.forEach((bookmark, index) => {
+                    console.log(`--- Bookmark ${index + 1}: ${bookmark.id} ---`);
+                    console.log(`Raw created_at: "${bookmark.created_at}"`);
+                    console.log(`Raw bookmarked_at: "${bookmark.bookmarked_at}"`);
+                    console.log(`Raw sortIndex: "${bookmark.sortIndex || 'N/A'}"`);
+                    const createdDate = new Date(bookmark.created_at);
+                    const bookmarkedDate = new Date(bookmark.bookmarked_at);
+                    console.log(`Parsed created_at: ${createdDate.toISOString()} (${createdDate.getFullYear()})`);
+                    console.log(`Parsed bookmarked_at: ${bookmarkedDate.toISOString()} (${bookmarkedDate.getFullYear()})`);
+                    if (bookmark.sortIndex) {
+                        try {
+                            const sortIndexDate = getSortIndexDate(bookmark.sortIndex);
+                            console.log(`SortIndex parsed: ${sortIndexDate.toISOString()} (${sortIndexDate.getFullYear()})`);
+                        }
+                        catch (error) {
+                            console.log(`❌ SortIndex parse error: ${error.message}`);
+                        }
+                    }
+                    console.log(`Author: ${bookmark.author}`);
+                    console.log(`Text preview: "${bookmark.text.substring(0, 50)}..."`);
+                    console.log(''); // Empty line for readability
+                });
+            }
+            catch (error) {
+                console.error('❌ Debug function failed:', error);
+            }
+        },
+        /**
+         * Validate date consistency across all bookmarks
+         */
+        async validateDateConsistency() {
+            try {
+                console.log('🔍 VALIDATION: Checking date consistency...\n');
+                const result = await db.searchBookmarks({ limit: 1000, sortBy: 'created_at', sortOrder: 'asc' });
+                if (!result.success || !result.data) {
+                    console.log('❌ Failed to fetch bookmarks for validation');
+                    return;
+                }
+                let issues = {
+                    invalidCreatedAt: 0,
+                    invalidBookmarkedAt: 0,
+                    futureCreatedAt: 0,
+                    futureBookmarkedAt: 0,
+                    epochDates: 0,
+                    inconsistentOrder: 0
+                };
+                const now = new Date();
+                const twitterLaunch = new Date('2006-03-21'); // Twitter launch date
+                console.log(`📊 Validating ${result.data.length} bookmarks...\n`);
+                result.data.forEach((bookmark, index) => {
+                    const createdDate = new Date(bookmark.created_at);
+                    const bookmarkedDate = new Date(bookmark.bookmarked_at);
+                    // Check for invalid dates
+                    if (isNaN(createdDate.getTime())) {
+                        issues.invalidCreatedAt++;
+                        console.log(`❌ Invalid created_at: ${bookmark.id} - "${bookmark.created_at}"`);
+                    }
+                    if (isNaN(bookmarkedDate.getTime())) {
+                        issues.invalidBookmarkedAt++;
+                        console.log(`❌ Invalid bookmarked_at: ${bookmark.id} - "${bookmark.bookmarked_at}"`);
+                    }
+                    // Check for future dates
+                    if (createdDate > now) {
+                        issues.futureCreatedAt++;
+                        console.log(`⚠️ Future created_at: ${bookmark.id} - ${createdDate.toISOString()}`);
+                    }
+                    if (bookmarkedDate > now) {
+                        issues.futureBookmarkedAt++;
+                        console.log(`⚠️ Future bookmarked_at: ${bookmark.id} - ${bookmarkedDate.toISOString()}`);
+                    }
+                    // Check for epoch dates (Jan 1, 1970)
+                    if (createdDate.getTime() < twitterLaunch.getTime()) {
+                        issues.epochDates++;
+                        console.log(`⚠️ Pre-Twitter date: ${bookmark.id} - ${createdDate.toISOString()}`);
+                    }
+                    // Check for order consistency (created should generally be <= bookmarked)
+                    if (createdDate > bookmarkedDate) {
+                        issues.inconsistentOrder++;
+                        console.log(`⚠️ Created after bookmarked: ${bookmark.id} - created: ${createdDate.toISOString()}, bookmarked: ${bookmarkedDate.toISOString()}`);
+                    }
+                });
+                console.log('\n📋 VALIDATION SUMMARY:');
+                console.log(`✅ Total bookmarks checked: ${result.data.length}`);
+                console.log(`❌ Invalid created_at dates: ${issues.invalidCreatedAt}`);
+                console.log(`❌ Invalid bookmarked_at dates: ${issues.invalidBookmarkedAt}`);
+                console.log(`⚠️ Future created_at dates: ${issues.futureCreatedAt}`);
+                console.log(`⚠️ Future bookmarked_at dates: ${issues.futureBookmarkedAt}`);
+                console.log(`⚠️ Pre-Twitter epoch dates: ${issues.epochDates}`);
+                console.log(`⚠️ Inconsistent date order: ${issues.inconsistentOrder}`);
+                const totalIssues = Object.values(issues).reduce((sum, count) => sum + count, 0);
+                if (totalIssues === 0) {
+                    console.log('\n🎉 All dates look good!');
+                }
+                else {
+                    console.log(`\n⚠️ Found ${totalIssues} potential issues`);
+                }
+            }
+            catch (error) {
+                console.error('❌ Validation failed:', error);
+            }
+        },
+        /**
+         * Get 20 oldest tweets by bookmarked_at date
+         */
+        async getOldestBookmarkedAt() {
+            try {
+                console.log('🔍 OLDEST BY BOOKMARKED_AT: Fetching 20 oldest bookmarked tweets...\n');
+                const result = await db.searchBookmarks({ limit: 20, sortBy: 'bookmarked_at', sortOrder: 'asc' });
+                if (!result.success || !result.data || result.data.length === 0) {
+                    console.log('❌ No bookmarks found');
+                    return;
+                }
+                console.log(`📊 Found ${result.data.length} oldest bookmarked tweets:\n`);
+                result.data.forEach((bookmark, index) => {
+                    const bookmarkedDate = new Date(bookmark.bookmarked_at);
+                    const createdDate = new Date(bookmark.created_at);
+                    console.log(`${index + 1}. ${bookmark.id} (@${bookmark.author})`);
+                    console.log(`   Bookmarked: ${bookmarkedDate.toISOString()} (${bookmarkedDate.getFullYear()})`);
+                    console.log(`   Created: ${createdDate.toISOString()} (${createdDate.getFullYear()})`);
+                    console.log(`   Text: "${bookmark.text.substring(0, 60)}..."`);
+                    console.log('');
+                });
+            }
+            catch (error) {
+                console.error('❌ Function failed:', error);
+            }
+        },
+        /**
+         * Get 20 newest tweets by bookmarked_at date
+         */
+        async getNewestBookmarkedAt() {
+            try {
+                console.log('🔍 NEWEST BY BOOKMARKED_AT: Fetching 20 newest bookmarked tweets...\n');
+                const result = await db.searchBookmarks({ limit: 20, sortBy: 'bookmarked_at', sortOrder: 'desc' });
+                if (!result.success || !result.data || result.data.length === 0) {
+                    console.log('❌ No bookmarks found');
+                    return;
+                }
+                console.log(`📊 Found ${result.data.length} newest bookmarked tweets:\n`);
+                result.data.forEach((bookmark, index) => {
+                    const bookmarkedDate = new Date(bookmark.bookmarked_at);
+                    const createdDate = new Date(bookmark.created_at);
+                    console.log(`${index + 1}. ${bookmark.id} (@${bookmark.author})`);
+                    console.log(`   Bookmarked: ${bookmarkedDate.toISOString()} (${bookmarkedDate.getFullYear()})`);
+                    console.log(`   Created: ${createdDate.toISOString()} (${createdDate.getFullYear()})`);
+                    console.log(`   Text: "${bookmark.text.substring(0, 60)}..."`);
+                    console.log('');
+                });
+            }
+            catch (error) {
+                console.error('❌ Function failed:', error);
+            }
+        },
+        /**
+         * Get 20 oldest tweets by created_at date
+         */
+        async getOldestCreatedAt() {
+            try {
+                console.log('🔍 OLDEST BY CREATED_AT: Fetching 20 oldest created tweets...\n');
+                const result = await db.searchBookmarks({ limit: 20, sortBy: 'created_at', sortOrder: 'asc' });
+                if (!result.success || !result.data || result.data.length === 0) {
+                    console.log('❌ No bookmarks found');
+                    return;
+                }
+                console.log(`📊 Found ${result.data.length} oldest created tweets:\n`);
+                result.data.forEach((bookmark, index) => {
+                    const createdDate = new Date(bookmark.created_at);
+                    const bookmarkedDate = new Date(bookmark.bookmarked_at);
+                    console.log(`${index + 1}. ${bookmark.id} (@${bookmark.author})`);
+                    console.log(`   Created: ${createdDate.toISOString()} (${createdDate.getFullYear()})`);
+                    console.log(`   Bookmarked: ${bookmarkedDate.toISOString()} (${bookmarkedDate.getFullYear()})`);
+                    console.log(`   Text: "${bookmark.text.substring(0, 60)}..."`);
+                    console.log('');
+                });
+            }
+            catch (error) {
+                console.error('❌ Function failed:', error);
+            }
+        },
+        /**
+         * Get 20 newest tweets by created_at date
+         */
+        async getNewestCreatedAt() {
+            try {
+                console.log('🔍 NEWEST BY CREATED_AT: Fetching 20 newest created tweets...\n');
+                const result = await db.searchBookmarks({ limit: 20, sortBy: 'created_at', sortOrder: 'desc' });
+                if (!result.success || !result.data || result.data.length === 0) {
+                    console.log('❌ No bookmarks found');
+                    return;
+                }
+                console.log(`📊 Found ${result.data.length} newest created tweets:\n`);
+                result.data.forEach((bookmark, index) => {
+                    const createdDate = new Date(bookmark.created_at);
+                    const bookmarkedDate = new Date(bookmark.bookmarked_at);
+                    console.log(`${index + 1}. ${bookmark.id} (@${bookmark.author})`);
+                    console.log(`   Created: ${createdDate.toISOString()} (${createdDate.getFullYear()})`);
+                    console.log(`   Bookmarked: ${bookmarkedDate.toISOString()} (${bookmarkedDate.getFullYear()})`);
+                    console.log(`   Text: "${bookmark.text.substring(0, 60)}..."`);
+                    console.log('');
+                });
+            }
+            catch (error) {
+                console.error('❌ Function failed:', error);
+            }
+        }
     };
     // Also expose functions globally for direct access
     self.addRandomTags = self.testXSaved.addRandomTags;
     self.getTagStats = self.testXSaved.getTagStats;
+    self.debugBookmarkDates = self.testXSaved.debugBookmarkDates;
+    self.validateDateConsistency = self.testXSaved.validateDateConsistency;
+    self.getOldestBookmarkedAt = self.testXSaved.getOldestBookmarkedAt;
+    self.getNewestBookmarkedAt = self.testXSaved.getNewestBookmarkedAt;
+    self.getOldestCreatedAt = self.testXSaved.getOldestCreatedAt;
+    self.getNewestCreatedAt = self.testXSaved.getNewestCreatedAt;
     console.log('🔧 === XSaved v2 Debug Console ===');
     console.log('Available commands:');
     console.log('  • self.testXSaved.inspectDB() - Database overview');
@@ -4499,6 +4740,13 @@ if (typeof self !== 'undefined') {
     console.log('  • addRandomTags() or self.testXSaved.addRandomTags() - Add random tags');
     console.log('  • addSmartTags() or self.testXSaved.addSmartTags() - Add content-based tags');
     console.log('  • getTagStats() or self.testXSaved.getTagStats() - Show tag statistics');
+    console.log('📅 DATE DEBUG FUNCTIONS:');
+    console.log('  • debugBookmarkDates() - Show date analysis for first 10 bookmarks');
+    console.log('  • validateDateConsistency() - Check for date inconsistencies');
+    console.log('  • getOldestBookmarkedAt() - Show 20 oldest tweets by bookmark date');
+    console.log('  • getNewestBookmarkedAt() - Show 20 newest tweets by bookmark date');
+    console.log('  • getOldestCreatedAt() - Show 20 oldest tweets by creation date');
+    console.log('  • getNewestCreatedAt() - Show 20 newest tweets by creation date');
 }
 
 })();
