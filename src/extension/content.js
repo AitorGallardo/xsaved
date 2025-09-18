@@ -1711,6 +1711,47 @@ class XSavedContentScript {
     
     console.log(`🔄 Applying sorting: ${sortType}`);
 
+    // Check if we have an active search term - if so, always re-execute search with new sorting
+    const searchInput = document.querySelector('.xsaved-search-input');
+    const currentSearchTerm = searchInput ? searchInput.value.trim() : '';
+
+    if (currentSearchTerm) {
+      console.log(`🔍 Re-executing search "${currentSearchTerm}" with new sorting: ${sortType}`);
+      
+      chrome.runtime.sendMessage({
+        action: 'searchBookmarks', 
+        query: { 
+          text: currentSearchTerm, 
+          limit: this.getBookmarkLimit(),
+          sortBy: sortBy, 
+          sortOrder: sortOrder 
+        }
+      }, (response) => {
+        if (response?.success) {
+          let searchResults = [];
+          
+          // Handle different response structures
+          if (response.result?.bookmarks) {
+            searchResults = response.result.bookmarks.map(scoredBookmark => {
+              return scoredBookmark.bookmark || scoredBookmark;
+            });
+          } else if (Array.isArray(response.result)) {
+            searchResults = response.result;
+          } else {
+            console.warn('⚠️ Unexpected response structure:', response);
+            return;
+          }
+          
+          console.log(`✅ Search + sort completed: "${currentSearchTerm}" → ${searchResults.length} results with ${sortType}`);
+          this.updateGridContent(searchResults);
+          this.scrollToTopOfGrid();
+        } else {
+          console.error('❌ Failed to fetch search results with sorting:', response);
+        }
+      });
+      return; // Exit early since we're handling this asynchronously
+    }
+
     if (bookmarks) {
       // If bookmarks provided, sort them client-side since we can't assume they're sorted
       console.log(`🔄 Sorting ${bookmarks.length} provided bookmarks by ${sortType}`);
@@ -1728,14 +1769,14 @@ class XSavedContentScript {
       // Scroll to top after sorting
       this.scrollToTopOfGrid();
     } else {
-      // No bookmarks provided - fetch fresh sorted data from database
+      // No bookmarks provided and no search term - fetch fresh sorted data from database
       console.log(`🔄 Fetching sorted data from database: ${sortBy} ${sortOrder}`);
       
       chrome.runtime.sendMessage({
         action: 'searchBookmarks', 
         query: { 
           text: '', 
-          limit: this.getBookmarkLimit(), // Configurable limit
+          limit: this.getBookmarkLimit(),
           sortBy: sortBy, 
           sortOrder: sortOrder 
         }
@@ -1757,7 +1798,6 @@ class XSavedContentScript {
           
           console.log(`✅ Applied database sorting: ${sortType} (${sortedBookmarks.length} bookmarks)`);
           this.updateGridContent(sortedBookmarks);
-          // Scroll to top after sorting
           this.scrollToTopOfGrid();
         } else {
           console.error('❌ Failed to fetch sorted bookmarks:', response);
@@ -1799,6 +1839,7 @@ class XSavedContentScript {
     };
 
     const card = document.createElement('div');
+    card.setAttribute('data-bookmark-id', safeBookmark.id);
     
     // Apply base card styles without floating animations
     card.className = 'tweet-card';

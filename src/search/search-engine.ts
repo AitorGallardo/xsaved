@@ -47,7 +47,6 @@ export class SearchEngine {
 
       // Parse query into optimized execution plan
       const parsedQuery = this.queryParser.parseQuery(query);
-      console.log('📝 Parsed query:', parsedQuery);
 
       // Execute search
       const result = await this.searchExecutor.executeSearch(parsedQuery);
@@ -62,11 +61,6 @@ export class SearchEngine {
 
       // Log performance
       const totalTime = performance.now() - startTime;
-      console.log(`🔍 Search completed in ${totalTime.toFixed(2)}ms:`, {
-        query: query.text || 'complex query',
-        results: result.totalCount,
-        cacheHit: false
-      });
 
       return result;
 
@@ -227,7 +221,6 @@ export class SearchEngine {
   private cacheResult(cacheKey: string, result: SearchResult): void {
     // Don't cache empty results to avoid stale empty cache issues
     if (result.bookmarks.length === 0) {
-      console.log('🚫 Not caching empty result to prevent stale cache');
       return;
     }
     

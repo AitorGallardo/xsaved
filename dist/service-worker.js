@@ -1864,7 +1864,6 @@ class SearchEngine {
             }
             // Parse query into optimized execution plan
             const parsedQuery = this.queryParser.parseQuery(query);
-            console.log('📝 Parsed query:', parsedQuery);
             // Execute search
             const result = await this.searchExecutor.executeSearch(parsedQuery);
             // Add suggested queries
@@ -1875,11 +1874,6 @@ class SearchEngine {
             }
             // Log performance
             const totalTime = performance.now() - startTime;
-            console.log(`🔍 Search completed in ${totalTime.toFixed(2)}ms:`, {
-                query: query.text || 'complex query',
-                results: result.totalCount,
-                cacheHit: false
-            });
             return result;
         }
         catch (error) {
@@ -2021,7 +2015,6 @@ class SearchEngine {
     cacheResult(cacheKey, result) {
         // Don't cache empty results to avoid stale empty cache issues
         if (result.bookmarks.length === 0) {
-            console.log('🚫 Not caching empty result to prevent stale cache');
             return;
         }
         // Implement LRU cache eviction if cache is full
