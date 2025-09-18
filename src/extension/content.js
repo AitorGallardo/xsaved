@@ -1611,8 +1611,10 @@ class XSavedContentScript {
 
     const sortFields = [
       { field: 'created_at', label: 'Created At' },
-      { field: 'bookmarked_at', label: 'Bookmarked At' }
-    ];
+      // TODO: Add bookmarked at when we have it properly fixed. Right now we have some problem with the 
+      // epoch and we are not having correct bookmarked at dates.
+      // { field: 'bookmarked_at', label: 'Bookmarked At' }    
+      ];
 
     sortFields.forEach((fieldInfo, index) => {
       const menuItem = document.createElement('div');

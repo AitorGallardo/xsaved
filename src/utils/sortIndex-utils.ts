@@ -9,8 +9,10 @@
  * @returns {Date} The extracted date
  */
 export function getSortIndexDate(sortIndex: string | number | bigint): Date {
-    // Twitter epoch: January 1, 2010 00:00:00 UTC (in milliseconds)
-    const TWITTER_EPOCH = 1262304000000;
+    // Twitter epoch: January 1, 2010 00:00:00 UTC (in milliseconds) -> 1262304000000
+    // Twitter epoch told by Grok and ChatGpt (November 4, 2010, 01:42:54 UTC) -> 1288834974657
+    // Custom epoch (2011-09-27 01:13:00 UTC) -> 1317959580952
+    const TWITTER_EPOCH = 1288834974657;
     
     try {
         // Convert to BigInt for precise calculation
