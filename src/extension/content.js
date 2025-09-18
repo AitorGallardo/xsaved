@@ -1072,7 +1072,7 @@ class XSavedContentScript {
       const dateField = this.currentSort.field === 'bookmarked_at' ? 'bookmarked_at' : 'created_at';
       
       const grouped = bookmarks.reduce((acc, bookmark) => {
-        const date = new Date(bookmark[dateField] || bookmark.created_at || bookmark.bookmarked_at);
+        const date = new Date(bookmark[dateField] || bookmark.created_at);
         const monthYear = `${date.getFullYear()}-${date.getMonth()}`;
         
         if (!acc[monthYear]) {
@@ -1470,7 +1470,7 @@ class XSavedContentScript {
       const dateField = this.currentSort.field === 'bookmarked_at' ? 'bookmarked_at' : 'created_at';
       
       const grouped = bookmarks.reduce((acc, bookmark) => {
-        const date = new Date(bookmark[dateField] || bookmark.created_at || bookmark.bookmarked_at);
+        const date = new Date(bookmark[dateField] || bookmark.created_at);
         const monthYear = `${date.getFullYear()}-${date.getMonth()}`;
         
         if (!acc[monthYear]) {
@@ -2361,7 +2361,7 @@ class XSavedContentScript {
     // Helper function to group bookmarks by month/year (same as in renderBookmarksGrid)
     const groupBookmarksByDate = (bookmarks) => {
       const grouped = bookmarks.reduce((acc, bookmark) => {
-        const date = new Date(bookmark.bookmarked_at || bookmark.created_at);
+        const date = new Date(bookmark.created_at);
         const monthYear = `${date.getFullYear()}-${date.getMonth()}`;
         
         if (!acc[monthYear]) {

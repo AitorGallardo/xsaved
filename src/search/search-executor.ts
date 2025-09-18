@@ -48,7 +48,7 @@ export class SearchExecutor {
         );
       } else {
         // No filters - get recent bookmarks as starting point
-        const sortBy = parsedQuery.sortBy === 'created_at' ? 'created_at' : 'bookmarked_at';
+        const sortBy = parsedQuery.sortBy === 'bookmarked_at' ? 'bookmarked_at' : 'created_at';
         const recentResult = await db.getRecentBookmarks({ 
           limit: parsedQuery.limit || 2000,
           sortBy: sortBy
@@ -239,7 +239,7 @@ export class SearchExecutor {
       case 'dateRange':
         const { start, end } = filter.value;
         filtered = bookmarks.filter(bookmark => {
-          const bookmarkDate = new Date(bookmark.bookmarked_at);
+          const bookmarkDate = new Date(bookmark.created_at);
           return bookmarkDate >= new Date(start) && bookmarkDate <= new Date(end);
         });
         break;
