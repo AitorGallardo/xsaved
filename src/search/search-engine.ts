@@ -36,8 +36,8 @@ export class SearchEngine {
       // Generate cache key
       const cacheKey = this.queryParser.generateQueryHash(query);
       
-      // Check cache first
-      if (this.config.caching.enabled) {
+      // Check cache first (but skip for pagination to avoid stale results)
+      if (this.config.caching.enabled && query.offset === 0) {
         const cached = this.getCachedResult(cacheKey);
         if (cached) {
           console.log('🎯 Cache hit for query:', query);
@@ -54,8 +54,8 @@ export class SearchEngine {
       // Add suggested queries
       result.suggestedQueries = this.queryParser.extractSuggestions(query);
 
-      // Cache result if enabled
-      if (this.config.caching.enabled) {
+      // Cache result if enabled (skip for pagination)
+      if (this.config.caching.enabled && query.offset === 0) {
         this.cacheResult(cacheKey, result);
       }
 

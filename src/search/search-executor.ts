@@ -1,9 +1,10 @@
 /**
  * XSaved Extension v2 - Search Executor
- * Executes optimized queries against IndexedDB indexes
+ * Executes optimized queries using pure Dexie API
+ * OPTIMIZED: Removed raw IndexedDB transactions, now uses native Dexie queries
  */
 
-import { db, BookmarkEntity, STORES } from '../db';
+import { db, BookmarkEntity } from '../db';
 import { 
   ParsedQuery, 
   SearchResult, 
@@ -48,10 +49,11 @@ export class SearchExecutor {
         );
       } else {
         // No filters - get recent bookmarks as starting point
-        const sortBy = parsedQuery.sortBy === 'bookmarked_at' ? 'bookmarked_at' : 'created_at';
+        const sortBy = 'created_at'; // Always use created_at
         const recentResult = await db.getRecentBookmarks({ 
           limit: parsedQuery.limit || 2000,
-          sortBy: sortBy
+          sortBy: sortBy,
+          offset: parsedQuery.offset  // CRITICAL FIX: Pass the offset for pagination!
         });
         candidateBookmarks = recentResult.data || [];
         analytics.indexesUsed.push(sortBy);
@@ -273,99 +275,90 @@ export class SearchExecutor {
   }
 
   /**
-   * Search by author using author index
+   * Search by author using Dexie query (OPTIMIZED)
    */
   private async searchByAuthor(author: string): Promise<BookmarkEntity[]> {
-    // Use the database's indexed search (we need to add this method to database.ts)
-    return new Promise((resolve, reject) => {
-      if (!db.database) {
-        reject(new Error('Database not initialized'));
-        return;
-      }
-
-      const transaction = db.database.transaction([STORES.BOOKMARKS], 'readonly');
-      const store = transaction.objectStore(STORES.BOOKMARKS);
-      const index = store.index('author');
+    try {
+      // Use native Dexie query - much cleaner!
+      const results = await db.bookmarks
+        .where('author')
+        .equalsIgnoreCase(author)
+        .reverse()
+        .limit(1000)
+        .toArray();
       
-      const request = index.getAll(author.toLowerCase());
-      
-      request.onsuccess = () => {
-        resolve(request.result);
-      };
-      
-      request.onerror = () => {
-        reject(new Error('Failed to search by author'));
-      };
-    });
+      console.log(`👤 Found ${results.length} bookmarks by @${author}`);
+      return results;
+    } catch (error) {
+      console.error(`❌ Author search failed for @${author}:`, error);
+      return [];
+    }
   }
 
   /**
-   * Search by date range using bookmarked_at index
+   * Search by date range using Dexie query (OPTIMIZED)
    */
   private async searchByDateRange(dateRange: { start: string; end: string }): Promise<BookmarkEntity[]> {
-    return new Promise((resolve, reject) => {
-      if (!db.database) {
-        reject(new Error('Database not initialized'));
-        return;
-      }
-
-      const transaction = db.database.transaction([STORES.BOOKMARKS], 'readonly');
-      const store = transaction.objectStore(STORES.BOOKMARKS);
-              const index = store.index('bookmarked_at');
+    try {
+      // Use native Dexie range query - cleaner and more optimized!
+      const results = await db.bookmarks
+        .where('bookmarked_at')
+        .between(dateRange.start, dateRange.end)
+        .reverse()
+        .limit(5000)
+        .toArray();
       
-      const range = IDBKeyRange.bound(dateRange.start, dateRange.end);
-      const request = index.getAll(range);
-      
-      request.onsuccess = () => {
-        resolve(request.result);
-      };
-      
-      request.onerror = () => {
-        reject(new Error('Failed to search by date range'));
-      };
-    });
+      console.log(`📅 Found ${results.length} bookmarks in date range ${dateRange.start} to ${dateRange.end}`);
+      return results;
+    } catch (error) {
+      console.error('❌ Date range search failed:', error);
+      return [];
+    }
   }
 
   /**
-   * Search by text token using text_search multi-entry index
+   * Search by text token using Dexie multi-entry index (OPTIMIZED)
    */
   private async searchByTextToken(token: string): Promise<BookmarkEntity[]> {
-    return new Promise((resolve, reject) => {
-      if (!db.database) {
-        reject(new Error('Database not initialized'));
-        return;
-      }
-
-      const transaction = db.database.transaction([STORES.BOOKMARKS], 'readonly');
-      const store = transaction.objectStore(STORES.BOOKMARKS);
-      const index = store.index('text_search');
+    try {
+      // Use native Dexie multi-entry query - leverages textTokens index!
+      const results = await db.bookmarks
+        .where('textTokens')
+        .equals(token.toLowerCase())
+        .reverse()
+        .limit(2000)
+        .toArray();
       
-      const request = index.getAll(token);
-      
-      request.onsuccess = () => {
-        resolve(request.result);
-      };
-      
-      request.onerror = () => {
-        reject(new Error('Failed to search by text token'));
-      };
-    });
+      console.log(`🔍 Found ${results.length} bookmarks containing token "${token}"`);
+      return results;
+    } catch (error) {
+      console.error(`❌ Text token search failed for "${token}":`, error);
+      return [];
+    }
   }
 
   /**
-   * Filter by media presence (no index available)
+   * Filter by media presence using optimized Dexie query (OPTIMIZED)
    */
   private async searchByMediaPresence(hasMedia: boolean): Promise<BookmarkEntity[]> {
-    // No specific index for this - need to scan bookmarks
-    // This is less efficient, so should be used as secondary filter
-    const recentResult = await db.getRecentBookmarks({ limit: 10000 });
-    const allBookmarks = recentResult.data || [];
-    
-    return allBookmarks.filter(bookmark => 
-      hasMedia ? 
-        (bookmark.media_urls && bookmark.media_urls.length > 0) :
-        (!bookmark.media_urls || bookmark.media_urls.length === 0)
-    );
+    try {
+      // Use Dexie's collection filtering - more efficient than manual scanning
+      const results = await db.bookmarks
+        .filter(bookmark => 
+          hasMedia ? 
+            (bookmark.media_urls && bookmark.media_urls.length > 0) :
+            (!bookmark.media_urls || bookmark.media_urls.length === 0)
+        )
+        .reverse()
+        .limit(5000)
+        .toArray();
+      
+      console.log(`📷 Found ${results.length} bookmarks ${hasMedia ? 'with' : 'without'} media`);
+      return results;
+    } catch (error) {
+      console.error('❌ Media presence search failed:', error);
+      return [];
+    }
   }
 
   /**

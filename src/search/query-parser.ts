@@ -39,7 +39,8 @@ export class QueryParser {
       originalQuery: query,
       sortBy: query.sortBy || 'relevance',
       sortOrder: query.sortOrder || 'desc',
-      limit: query.limit || 50
+      limit: query.limit || 50,
+      offset: query.offset || 0
     };
 
     // Parse text input

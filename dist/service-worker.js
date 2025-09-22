@@ -77,18 +77,20 @@ const {
 
 /* harmony default export */ const import_wrapper_prod = (Dexie);
 
-;// ./src/db/dexie-db.ts
+;// ./src/db/database.ts
 /**
- * XSaved Extension v2 - Dexie Database Layer
- * Clean, powerful IndexedDB wrapper replacing raw IndexedDB implementation
+ * XSaved Extension v2 - Consolidated Database Layer
+ * Single Dexie implementation with consistent API
+ * Replaces: database.ts (877 lines) + database-dexie.ts (534 lines)
  */
 
 // ========================
 // DATABASE SCHEMA DESIGN
 // ========================
-class XSavedDexieDB extends import_wrapper_prod {
+class XSavedDatabase extends import_wrapper_prod {
     constructor() {
         super('XSavedDB');
+        this.isInitialized = false;
         // Define schema with indexes
         this.version(1).stores({
             // Bookmarks: Primary storage with multi-entry indexes for fast queries
@@ -200,33 +202,109 @@ class XSavedDexieDB extends import_wrapper_prod {
         });
     }
     // ========================
+    // INITIALIZATION & UTILITIES
+    // ========================
+    /**
+     * Initialize database connection
+     */
+    async initialize() {
+        try {
+            await this.open();
+            this.isInitialized = true;
+            console.log('✅ Consolidated Dexie database initialized');
+            return { success: true };
+        }
+        catch (error) {
+            console.error('❌ Failed to initialize database:', error);
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Database initialization failed'
+            };
+        }
+    }
+    /**
+     * Get database instance (for compatibility)
+     */
+    get database() {
+        try {
+            return this.backendDB();
+        }
+        catch (error) {
+            return null;
+        }
+    }
+    /**
+     * Performance tracking wrapper
+     */
+    async withPerformanceTracking(operation, fn) {
+        const startTime = performance.now();
+        try {
+            const result = await fn();
+            const duration = performance.now() - startTime;
+            const metrics = {
+                operation,
+                duration,
+                recordCount: Array.isArray(result) ? result.length : 1,
+                timestamp: new Date().toISOString()
+            };
+            if (duration > 50) { // Log slow operations
+                console.warn(`⚠️ Slow operation: ${operation} took ${duration.toFixed(2)}ms`);
+            }
+            return { result, metrics };
+        }
+        catch (error) {
+            const duration = performance.now() - startTime;
+            console.error(`❌ Operation failed: ${operation} (${duration.toFixed(2)}ms)`, error);
+            throw error;
+        }
+    }
+    // ========================
     // BOOKMARK OPERATIONS
     // ========================
     /**
-     * Add a bookmark with automatic tag analytics
+     * Add a bookmark with consistent API
      */
     async addBookmark(bookmark) {
         try {
-            await this.bookmarks.add(bookmark);
-            console.log(`✅ Bookmark added successfully: ${bookmark.id}`);
-            return bookmark;
+            const { result, metrics } = await this.withPerformanceTracking('addBookmark', () => this._addBookmarkInternal(bookmark));
+            return {
+                success: true,
+                data: result,
+                metrics
+            };
         }
         catch (error) {
-            console.error(`❌ Failed to add bookmark ${bookmark.id}:`, error);
-            throw new Error(`Bookmark save failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Failed to add bookmark'
+            };
         }
+    }
+    /**
+     * Internal bookmark addition
+     */
+    async _addBookmarkInternal(bookmark) {
+        await this.bookmarks.add(bookmark);
+        console.log(`✅ Bookmark added successfully: ${bookmark.id}`);
+        return bookmark;
     }
     /**
      * Get bookmark by ID
      */
     async getBookmark(id) {
         try {
-            const bookmark = await this.bookmarks.get(id);
-            return bookmark || null;
+            const { result, metrics } = await this.withPerformanceTracking('getBookmark', () => this.bookmarks.get(id));
+            return {
+                success: true,
+                data: result || null,
+                metrics
+            };
         }
         catch (error) {
-            console.error(`❌ Failed to get bookmark ${id}:`, error);
-            return null;
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Failed to get bookmark'
+            };
         }
     }
     /**
@@ -234,19 +312,29 @@ class XSavedDexieDB extends import_wrapper_prod {
      */
     async updateBookmark(id, updates) {
         try {
-            const updated = await this.bookmarks.update(id, updates);
-            if (updated) {
-                console.log(`✅ Bookmark updated: ${id}`);
-                return true;
-            }
-            else {
-                console.warn(`⚠️ Bookmark not found for update: ${id}`);
-                return false;
-            }
+            const { result, metrics } = await this.withPerformanceTracking('updateBookmark', async () => {
+                const updated = await this.bookmarks.update(id, updates);
+                if (updated) {
+                    const updatedBookmark = await this.bookmarks.get(id);
+                    console.log(`✅ Bookmark updated: ${id}`);
+                    return updatedBookmark || null;
+                }
+                else {
+                    console.warn(`⚠️ Bookmark not found for update: ${id}`);
+                    return null;
+                }
+            });
+            return {
+                success: true,
+                data: result,
+                metrics
+            };
         }
         catch (error) {
-            console.error(`❌ Failed to update bookmark ${id}:`, error);
-            return false;
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Failed to update bookmark'
+            };
         }
     }
     /**
@@ -254,32 +342,48 @@ class XSavedDexieDB extends import_wrapper_prod {
      */
     async deleteBookmark(id) {
         try {
-            await this.bookmarks.delete(id);
-            console.log(`✅ Bookmark deleted: ${id}`);
-            return true;
+            const { result, metrics } = await this.withPerformanceTracking('deleteBookmark', async () => {
+                await this.bookmarks.delete(id);
+                console.log(`✅ Bookmark deleted: ${id}`);
+                return true;
+            });
+            return {
+                success: true,
+                data: result,
+                metrics
+            };
         }
         catch (error) {
-            console.error(`❌ Failed to delete bookmark ${id}:`, error);
-            return false;
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Failed to delete bookmark'
+            };
         }
     }
     /**
-     * Get all bookmarks with optional sorting
+     * Get all bookmarks with optional sorting and pagination
+     * ENHANCED: Now supports offset for pagination
      */
     async getAllBookmarks(options = {}) {
         try {
-            let query = this.bookmarks.orderBy(options.sortBy || 'bookmarked_at');
+            // OPTION A: Ultra-simple Dexie pagination (works because dates are normalized when saving)
+            let query = this.bookmarks.orderBy(options.sortBy || 'created_at');
+            // Apply sort order
             if (options.sortOrder === 'asc') {
                 // Keep ascending order
             }
             else {
                 query = query.reverse(); // Default to descending (newest first)
             }
+            // Apply pagination (Dexie handles this efficiently)
+            if (options.offset) {
+                query = query.offset(options.offset);
+            }
             if (options.limit) {
                 query = query.limit(options.limit);
             }
             const bookmarks = await query.toArray();
-            console.log(`📚 Retrieved ${bookmarks.length} bookmarks`);
+            // Clean: No console logging
             return bookmarks;
         }
         catch (error) {
@@ -290,32 +394,6 @@ class XSavedDexieDB extends import_wrapper_prod {
     // ========================
     // SEARCH OPERATIONS
     // ========================
-    /**
-     * Search bookmarks by text content
-     */
-    async searchBookmarks(query, options = {}) {
-        if (!query.trim()) {
-            return this.getAllBookmarks(options);
-        }
-        try {
-            const tokens = this.tokenizeText(query);
-            const startTime = performance.now();
-            // Search using multi-entry textTokens index
-            const results = await this.bookmarks
-                .where('textTokens')
-                .anyOfIgnoreCase(tokens)
-                .reverse() // Newest first by default
-                .limit(options.limit || 50)
-                .toArray();
-            const duration = performance.now() - startTime;
-            console.log(`🔍 Search completed in ${duration.toFixed(2)}ms: ${results.length} results for "${query}"`);
-            return results;
-        }
-        catch (error) {
-            console.error('❌ Search failed:', error);
-            return [];
-        }
-    }
     /**
      * Search bookmarks by tags
      */
@@ -461,24 +539,174 @@ class XSavedDexieDB extends import_wrapper_prod {
             .slice(0, 50); // Limit tokens per bookmark
     }
     /**
+     * Get recent bookmarks (compatibility method for search engine)
+     */
+    async getRecentBookmarks(options = {}) {
+        try {
+            const { result, metrics } = await this.withPerformanceTracking('getRecentBookmarks', () => this.getAllBookmarks({
+                sortBy: options.sortBy || 'created_at',
+                sortOrder: 'desc',
+                limit: options.limit || 50,
+                offset: options.offset // CRITICAL FIX: Pass offset to getAllBookmarks
+            }));
+            return {
+                success: true,
+                data: result,
+                metrics
+            };
+        }
+        catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Failed to get recent bookmarks'
+            };
+        }
+    }
+    /**
+     * Get bookmarks by tag (compatibility method for search engine)
+     */
+    async getBookmarksByTag(tag) {
+        try {
+            const { result, metrics } = await this.withPerformanceTracking('getBookmarksByTag', () => this.searchByTags([tag], { limit: 1000, matchAll: false }));
+            return {
+                success: true,
+                data: result,
+                metrics
+            };
+        }
+        catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Failed to get bookmarks by tag'
+            };
+        }
+    }
+    /**
+     * Search bookmarks with various criteria (compatible with service worker)
+     * ENHANCED: Now supports pagination with offset
+     */
+    async searchBookmarks(options = {}) {
+        try {
+            const { result, metrics } = await this.withPerformanceTracking('searchBookmarks', async () => {
+                let results = [];
+                // Handle different search types
+                if (options.text) {
+                    results = await this._searchBookmarksByText(options.text, {
+                        limit: options.limit,
+                        offset: options.offset, // NEW: Pass offset for pagination
+                        sortBy: options.sortBy,
+                        sortOrder: options.sortOrder
+                    });
+                }
+                else if (options.tags && options.tags.length > 0) {
+                    results = await this.searchByTags(options.tags, {
+                        limit: options.limit,
+                        matchAll: false
+                    });
+                }
+                else if (options.author) {
+                    results = await this.searchByAuthor(options.author, {
+                        limit: options.limit
+                    });
+                }
+                else {
+                    results = await this.getAllBookmarks({
+                        sortBy: options.sortBy === 'relevance' ? 'created_at' : options.sortBy,
+                        sortOrder: options.sortOrder,
+                        limit: options.limit,
+                        offset: options.offset // NEW: Pass offset for pagination
+                    });
+                }
+                // Apply date filtering if specified
+                if (options.dateFrom || options.dateTo) {
+                    results = results.filter(bookmark => {
+                        const bookmarkDate = new Date(bookmark.created_at);
+                        const fromDate = options.dateFrom ? new Date(options.dateFrom) : null;
+                        const toDate = options.dateTo ? new Date(options.dateTo) : null;
+                        if (fromDate && bookmarkDate < fromDate)
+                            return false;
+                        if (toDate && bookmarkDate > toDate)
+                            return false;
+                        return true;
+                    });
+                }
+                return results;
+            });
+            return {
+                success: true,
+                data: result,
+                metrics
+            };
+        }
+        catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Search failed'
+            };
+        }
+    }
+    /**
+     * Internal text search method
+     * ENHANCED: Now supports offset for pagination
+     */
+    async _searchBookmarksByText(query, options = {}) {
+        if (!query.trim()) {
+            return this.getAllBookmarks(options);
+        }
+        const tokens = this.tokenizeText(query);
+        // Search using multi-entry textTokens index with pagination
+        let query_builder = this.bookmarks
+            .where('textTokens')
+            .anyOfIgnoreCase(tokens);
+        // Apply sorting
+        if (options.sortOrder === 'asc') {
+            // Keep natural order
+        }
+        else {
+            query_builder = query_builder.reverse(); // Default to newest first
+        }
+        // Apply pagination
+        if (options.offset) {
+            query_builder = query_builder.offset(options.offset);
+        }
+        if (options.limit) {
+            query_builder = query_builder.limit(options.limit);
+        }
+        const results = await query_builder.toArray();
+        // Apply pagination to search results
+        const result = results.slice(options.offset || 0, (options.offset || 0) + (options.limit || 10000));
+        console.log(`🔍 Text search "${query}" returned ${result.length} bookmarks`);
+        return result;
+    }
+    // REMOVED: Unnecessary date normalization - dates are already consistent
+    /**
      * Get database statistics
      */
     async getStats() {
         try {
-            const [bookmarkCount, tagCount, collectionCount] = await Promise.all([
-                this.bookmarks.count(),
-                this.tags.count(),
-                this.collections.count()
-            ]);
+            const { result, metrics } = await this.withPerformanceTracking('getStats', async () => {
+                const [bookmarkCount, tagCount, collectionCount] = await Promise.all([
+                    this.bookmarks.count(),
+                    this.tags.count(),
+                    this.collections.count()
+                ]);
+                return {
+                    totalBookmarks: bookmarkCount,
+                    totalTags: tagCount,
+                    totalCollections: collectionCount
+                };
+            });
             return {
-                bookmarks: bookmarkCount,
-                tags: tagCount,
-                collections: collectionCount
+                success: true,
+                data: result,
+                metrics
             };
         }
         catch (error) {
-            console.error('❌ Failed to get database stats:', error);
-            return { bookmarks: 0, tags: 0, collections: 0 };
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Failed to get database stats'
+            };
         }
     }
     /**
@@ -495,486 +723,21 @@ class XSavedDexieDB extends import_wrapper_prod {
      */
     async clearAllData() {
         try {
-            await this.transaction('rw', [this.bookmarks, this.tags, this.collections, this.settings], async () => {
-                await this.bookmarks.clear();
-                await this.tags.clear();
-                await this.collections.clear();
-                await this.settings.clear();
+            const { metrics } = await this.withPerformanceTracking('clearAllData', async () => {
+                await this.transaction('rw', [this.bookmarks, this.tags, this.collections, this.settings], async () => {
+                    await this.bookmarks.clear();
+                    await this.tags.clear();
+                    await this.collections.clear();
+                    await this.settings.clear();
+                });
+                console.log('🧹 All data cleared');
             });
-            console.log('🧹 All data cleared');
-        }
-        catch (error) {
-            console.error('❌ Failed to clear data:', error);
-            throw error;
-        }
-    }
-}
-// Create and export database instance
-const dexieDB = new XSavedDexieDB();
-
-;// ./src/db/database-dexie.ts
-/**
- * XSaved Extension v2 - Dexie Database Compatibility Layer
- * Maintains same API as original database.ts but uses Dexie.js underneath
- * This ensures zero breaking changes during migration
- */
-
-class XSavedDatabase {
-    constructor() {
-        this.isInitialized = false;
-    }
-    /**
-     * Initialize database connection (Dexie handles this automatically)
-     */
-    async initialize() {
-        try {
-            // Dexie auto-initializes, but we can test the connection
-            await dexieDB.open();
-            this.isInitialized = true;
-            console.log('✅ Dexie database initialized successfully');
-            return { success: true };
-        }
-        catch (error) {
-            console.error('❌ Failed to initialize Dexie database:', error);
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : 'Database initialization failed'
-            };
-        }
-    }
-    /**
-     * Get database instance (for advanced operations)
-     * Returns the native IDBDatabase for direct IndexedDB operations
-     */
-    get database() {
-        try {
-            // Return the native IDBDatabase from Dexie
-            return dexieDB.backendDB();
-        }
-        catch (error) {
-            console.warn('⚠️ Could not access native IDBDatabase, database may not be open:', error);
-            return null;
-        }
-    }
-    // ========================
-    // BOOKMARK OPERATIONS
-    // ========================
-    /**
-     * Add a new bookmark
-     */
-    async addBookmark(bookmark) {
-        try {
-            const startTime = performance.now();
-            const result = await dexieDB.addBookmark(bookmark);
-            const duration = performance.now() - startTime;
             return {
                 success: true,
-                data: result,
-                metrics: {
-                    operation: 'addBookmark',
-                    duration: duration,
-                    recordCount: 1,
-                    timestamp: new Date().toISOString()
-                }
+                metrics
             };
         }
         catch (error) {
-            console.error('❌ Add bookmark failed:', error);
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : 'Failed to add bookmark'
-            };
-        }
-    }
-    /**
-     * Get bookmark by ID
-     */
-    async getBookmark(id) {
-        try {
-            const startTime = performance.now();
-            const result = await dexieDB.getBookmark(id);
-            const duration = performance.now() - startTime;
-            return {
-                success: true,
-                data: result,
-                metrics: {
-                    operation: 'read',
-                    duration: duration,
-                    timestamp: new Date().toISOString()
-                }
-            };
-        }
-        catch (error) {
-            console.error(`❌ Get bookmark failed for ID ${id}:`, error);
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : 'Failed to get bookmark'
-            };
-        }
-    }
-    /**
-     * Update existing bookmark
-     */
-    async updateBookmark(id, updates) {
-        try {
-            const startTime = performance.now();
-            const success = await dexieDB.updateBookmark(id, updates);
-            if (success) {
-                const updatedBookmark = await dexieDB.getBookmark(id);
-                const duration = performance.now() - startTime;
-                return {
-                    success: true,
-                    data: updatedBookmark,
-                    metrics: {
-                        operation: 'write',
-                        duration: duration,
-                        timestamp: new Date().toISOString()
-                    }
-                };
-            }
-            else {
-                return {
-                    success: false,
-                    error: `Bookmark with ID ${id} not found`
-                };
-            }
-        }
-        catch (error) {
-            console.error(`❌ Update bookmark failed for ID ${id}:`, error);
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : 'Failed to update bookmark'
-            };
-        }
-    }
-    /**
-     * Delete bookmark by ID
-     */
-    async deleteBookmark(id) {
-        try {
-            const startTime = performance.now();
-            const result = await dexieDB.deleteBookmark(id);
-            const duration = performance.now() - startTime;
-            return {
-                success: true,
-                data: result,
-                metrics: {
-                    operation: 'delete',
-                    duration: duration,
-                    timestamp: new Date().toISOString()
-                }
-            };
-        }
-        catch (error) {
-            console.error(`❌ Delete bookmark failed for ID ${id}:`, error);
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : 'Failed to delete bookmark'
-            };
-        }
-    }
-    /**
-     * Get recent bookmarks (compatibility method for search engine)
-     */
-    async getRecentBookmarks(options = {}) {
-        try {
-            const startTime = performance.now();
-            const result = await dexieDB.getAllBookmarks({
-                sortBy: options.sortBy || 'bookmarked_at',
-                sortOrder: 'desc',
-                limit: options.limit || 50
-            });
-            const duration = performance.now() - startTime;
-            console.log(`📅 Retrieved ${result.length} recent bookmarks in ${duration.toFixed(2)}ms`);
-            return {
-                success: true,
-                data: result,
-                metrics: {
-                    operation: 'read',
-                    duration: duration,
-                    timestamp: new Date().toISOString(),
-                    recordCount: result.length
-                }
-            };
-        }
-        catch (error) {
-            console.error('❌ Get recent bookmarks failed:', error);
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : 'Failed to get recent bookmarks'
-            };
-        }
-    }
-    /**
-     * Get bookmarks by tag (compatibility method for search engine)
-     */
-    async getBookmarksByTag(tag) {
-        try {
-            const startTime = performance.now();
-            const result = await dexieDB.searchByTags([tag], {
-                limit: 1000, // Large limit for comprehensive results
-                matchAll: false
-            });
-            const duration = performance.now() - startTime;
-            console.log(`🏷️ Retrieved ${result.length} bookmarks for tag "${tag}" in ${duration.toFixed(2)}ms`);
-            return {
-                success: true,
-                data: result,
-                metrics: {
-                    operation: 'read',
-                    duration: duration,
-                    timestamp: new Date().toISOString(),
-                    recordCount: result.length
-                }
-            };
-        }
-        catch (error) {
-            console.error(`❌ Get bookmarks by tag failed for "${tag}":`, error);
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : 'Failed to get bookmarks by tag'
-            };
-        }
-    }
-    /**
-     * Get all bookmarks with options
-     */
-    async getAllBookmarks(options = {}) {
-        try {
-            const startTime = performance.now();
-            const result = await dexieDB.getAllBookmarks({
-                sortBy: options.sortBy,
-                sortOrder: options.sortOrder,
-                limit: options.limit
-            });
-            const duration = performance.now() - startTime;
-            console.log(`📚 Retrieved ${result.length} bookmarks in ${duration.toFixed(2)}ms`);
-            return {
-                success: true,
-                data: result,
-                metrics: {
-                    operation: 'read',
-                    duration: duration,
-                    timestamp: new Date().toISOString(),
-                    recordCount: result.length
-                }
-            };
-        }
-        catch (error) {
-            console.error('❌ Get all bookmarks failed:', error);
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : 'Failed to get bookmarks'
-            };
-        }
-    }
-    // ========================
-    // SEARCH OPERATIONS
-    // ========================
-    /**
-     * Search bookmarks with various criteria
-     */
-    async searchBookmarks(options = {}) {
-        try {
-            const startTime = performance.now();
-            let results = [];
-            // Handle different search types
-            if (options.text) {
-                results = await dexieDB.searchBookmarks(options.text, {
-                    limit: options.limit,
-                    sortBy: options.sortBy,
-                    sortOrder: options.sortOrder
-                });
-            }
-            else if (options.tags && options.tags.length > 0) {
-                results = await dexieDB.searchByTags(options.tags, {
-                    limit: options.limit,
-                    matchAll: false // OR operation by default
-                });
-            }
-            else if (options.author) {
-                results = await dexieDB.searchByAuthor(options.author, {
-                    limit: options.limit
-                });
-            }
-            else {
-                // No specific search criteria, get all bookmarks
-                results = await dexieDB.getAllBookmarks({
-                    sortBy: options.sortBy === 'relevance' ? 'created_at' : options.sortBy,
-                    sortOrder: options.sortOrder,
-                    limit: options.limit
-                });
-            }
-            // Apply date filtering if specified
-            if (options.dateFrom || options.dateTo) {
-                results = results.filter(bookmark => {
-                    const bookmarkDate = new Date(bookmark.created_at);
-                    const fromDate = options.dateFrom ? new Date(options.dateFrom) : null;
-                    const toDate = options.dateTo ? new Date(options.dateTo) : null;
-                    if (fromDate && bookmarkDate < fromDate)
-                        return false;
-                    if (toDate && bookmarkDate > toDate)
-                        return false;
-                    return true;
-                });
-            }
-            const duration = performance.now() - startTime;
-            console.log(`🔍 Search completed in ${duration.toFixed(2)}ms: ${results.length} results`);
-            return {
-                success: true,
-                data: results,
-                metrics: {
-                    operation: 'search',
-                    duration: duration,
-                    timestamp: new Date().toISOString(),
-                    recordCount: results.length
-                }
-            };
-        }
-        catch (error) {
-            console.error('❌ Search bookmarks failed:', error);
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : 'Search failed'
-            };
-        }
-    }
-    // ========================
-    // TAG OPERATIONS
-    // ========================
-    /**
-     * Get all tags
-     */
-    async getAllTags() {
-        try {
-            const startTime = performance.now();
-            const result = await dexieDB.getAllTags();
-            const duration = performance.now() - startTime;
-            return {
-                success: true,
-                data: result,
-                metrics: {
-                    operation: 'read',
-                    duration: duration,
-                    timestamp: new Date().toISOString()
-                }
-            };
-        }
-        catch (error) {
-            console.error('❌ Get all tags failed:', error);
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : 'Failed to get tags'
-            };
-        }
-    }
-    /**
-     * Get popular tags
-     */
-    async getPopularTags(limit = 20) {
-        try {
-            const startTime = performance.now();
-            const result = await dexieDB.getPopularTags(limit);
-            const duration = performance.now() - startTime;
-            return {
-                success: true,
-                data: result,
-                metrics: {
-                    operation: 'read',
-                    duration: duration,
-                    timestamp: new Date().toISOString()
-                }
-            };
-        }
-        catch (error) {
-            console.error('❌ Get popular tags failed:', error);
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : 'Failed to get popular tags'
-            };
-        }
-    }
-    /**
-     * Search tags by name
-     */
-    async searchTags(query) {
-        try {
-            const startTime = performance.now();
-            const allTags = await dexieDB.getAllTags();
-            // Simple text search on tag names
-            const filteredTags = allTags.filter(tag => tag.name.toLowerCase().includes(query.toLowerCase()));
-            const duration = performance.now() - startTime;
-            return {
-                success: true,
-                data: filteredTags,
-                metrics: {
-                    operation: 'search',
-                    duration: duration,
-                    timestamp: new Date().toISOString()
-                }
-            };
-        }
-        catch (error) {
-            console.error('❌ Search tags failed:', error);
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : 'Failed to search tags'
-            };
-        }
-    }
-    // ========================
-    // UTILITY OPERATIONS
-    // ========================
-    /**
-     * Get database statistics
-     */
-    async getStats() {
-        try {
-            const startTime = performance.now();
-            const stats = await dexieDB.getStats();
-            const duration = performance.now() - startTime;
-            return {
-                success: true,
-                data: {
-                    totalBookmarks: stats.bookmarks,
-                    totalTags: stats.tags,
-                    totalCollections: stats.collections,
-                    dbSize: stats.dbSize
-                },
-                metrics: {
-                    operation: 'read',
-                    duration: duration,
-                    timestamp: new Date().toISOString()
-                }
-            };
-        }
-        catch (error) {
-            console.error('❌ Get database stats failed:', error);
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : 'Failed to get database stats'
-            };
-        }
-    }
-    /**
-     * Clear all data (for testing)
-     */
-    async clearAllData() {
-        try {
-            const startTime = performance.now();
-            await dexieDB.clearAllData();
-            const duration = performance.now() - startTime;
-            return {
-                success: true,
-                metrics: {
-                    operation: 'delete',
-                    duration: duration,
-                    timestamp: new Date().toISOString()
-                }
-            };
-        }
-        catch (error) {
-            console.error('❌ Clear all data failed:', error);
             return {
                 success: false,
                 error: error instanceof Error ? error.message : 'Failed to clear data'
@@ -982,11 +745,75 @@ class XSavedDatabase {
         }
     }
     /**
+     * Clear all bookmarks only (keep other data)
+     */
+    async clearAllBookmarks() {
+        try {
+            const { metrics } = await this.withPerformanceTracking('clearAllBookmarks', async () => {
+                await this.bookmarks.clear();
+                console.log('🧹 All bookmarks cleared');
+            });
+            return {
+                success: true,
+                metrics
+            };
+        }
+        catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Failed to clear bookmarks'
+            };
+        }
+    }
+    /**
+     * Verify database functionality (for debugging)
+     */
+    async verifyDatabase() {
+        console.log('🧪 Testing database functionality...');
+        // Test bookmark creation
+        const testBookmark = {
+            id: 'test_' + Date.now(),
+            text: 'Test bookmark for verification',
+            author: 'test_user',
+            created_at: new Date().toISOString(),
+            bookmarked_at: new Date().toISOString(),
+            tags: ['test'],
+            media_urls: [],
+            textTokens: ['test', 'bookmark', 'verification']
+        };
+        try {
+            // Add test bookmark
+            const addResult = await this.addBookmark(testBookmark);
+            if (addResult.success) {
+                console.log('✅ Test bookmark added successfully');
+            }
+            else {
+                console.error('❌ Failed to add test bookmark:', addResult.error);
+                return;
+            }
+            // Retrieve test bookmark
+            const getResult = await this.getBookmark(testBookmark.id);
+            if (getResult.success && getResult.data) {
+                console.log('✅ Test bookmark retrieved successfully');
+                // Clean up test bookmark
+                await this.bookmarks.delete(testBookmark.id);
+                console.log('✅ Test bookmark cleaned up');
+                console.log('🎉 Database verification completed successfully!');
+            }
+            else {
+                console.error('❌ Failed to retrieve test bookmark');
+            }
+        }
+        catch (error) {
+            console.error('❌ Database verification failed:', error);
+        }
+    }
+    /**
      * Close database connection
      */
     async close() {
         try {
-            await dexieDB.close();
+            await super.close();
             this.isInitialized = false;
             console.log('✅ Database closed successfully');
         }
@@ -995,7 +822,7 @@ class XSavedDatabase {
         }
     }
 }
-// Create singleton instance
+// Create and export database instance
 const db = new XSavedDatabase();
 
 ;// ./src/db/config.ts
@@ -1180,9 +1007,9 @@ const MIGRATION_HELPERS = {
 ;// ./src/db/index.ts
 /**
  * XSaved Extension v2 - Database Module
- * Main exports for the data layer
+ * Consolidated single database implementation
  */
-// Main database class (using Dexie.js wrapper)
+// Main database class (consolidated Dexie implementation)
 
 // Configuration
 
@@ -1217,7 +1044,8 @@ class QueryParser {
             originalQuery: query,
             sortBy: query.sortBy || 'relevance',
             sortOrder: query.sortOrder || 'desc',
-            limit: query.limit || 50
+            limit: query.limit || 50,
+            offset: query.offset || 0
         };
         // Parse text input
         if (query.text) {
@@ -1463,7 +1291,8 @@ class QueryParser {
 ;// ./src/search/search-executor.ts
 /**
  * XSaved Extension v2 - Search Executor
- * Executes optimized queries against IndexedDB indexes
+ * Executes optimized queries using pure Dexie API
+ * OPTIMIZED: Removed raw IndexedDB transactions, now uses native Dexie queries
  */
 
 class SearchExecutor {
@@ -1493,10 +1322,11 @@ class SearchExecutor {
             }
             else {
                 // No filters - get recent bookmarks as starting point
-                const sortBy = parsedQuery.sortBy === 'bookmarked_at' ? 'bookmarked_at' : 'created_at';
+                const sortBy = 'created_at'; // Always use created_at
                 const recentResult = await db.getRecentBookmarks({
                     limit: parsedQuery.limit || 2000,
-                    sortBy: sortBy
+                    sortBy: sortBy,
+                    offset: parsedQuery.offset // CRITICAL FIX: Pass the offset for pagination!
                 });
                 candidateBookmarks = recentResult.data || [];
                 analytics.indexesUsed.push(sortBy);
@@ -1659,81 +1489,85 @@ class SearchExecutor {
         return result.success ? result.data || [] : [];
     }
     /**
-     * Search by author using author index
+     * Search by author using Dexie query (OPTIMIZED)
      */
     async searchByAuthor(author) {
-        // Use the database's indexed search (we need to add this method to database.ts)
-        return new Promise((resolve, reject) => {
-            if (!db.database) {
-                reject(new Error('Database not initialized'));
-                return;
-            }
-            const transaction = db.database.transaction([STORES.BOOKMARKS], 'readonly');
-            const store = transaction.objectStore(STORES.BOOKMARKS);
-            const index = store.index('author');
-            const request = index.getAll(author.toLowerCase());
-            request.onsuccess = () => {
-                resolve(request.result);
-            };
-            request.onerror = () => {
-                reject(new Error('Failed to search by author'));
-            };
-        });
+        try {
+            // Use native Dexie query - much cleaner!
+            const results = await db.bookmarks
+                .where('author')
+                .equalsIgnoreCase(author)
+                .reverse()
+                .limit(1000)
+                .toArray();
+            console.log(`👤 Found ${results.length} bookmarks by @${author}`);
+            return results;
+        }
+        catch (error) {
+            console.error(`❌ Author search failed for @${author}:`, error);
+            return [];
+        }
     }
     /**
-     * Search by date range using bookmarked_at index
+     * Search by date range using Dexie query (OPTIMIZED)
      */
     async searchByDateRange(dateRange) {
-        return new Promise((resolve, reject) => {
-            if (!db.database) {
-                reject(new Error('Database not initialized'));
-                return;
-            }
-            const transaction = db.database.transaction([STORES.BOOKMARKS], 'readonly');
-            const store = transaction.objectStore(STORES.BOOKMARKS);
-            const index = store.index('bookmarked_at');
-            const range = IDBKeyRange.bound(dateRange.start, dateRange.end);
-            const request = index.getAll(range);
-            request.onsuccess = () => {
-                resolve(request.result);
-            };
-            request.onerror = () => {
-                reject(new Error('Failed to search by date range'));
-            };
-        });
+        try {
+            // Use native Dexie range query - cleaner and more optimized!
+            const results = await db.bookmarks
+                .where('bookmarked_at')
+                .between(dateRange.start, dateRange.end)
+                .reverse()
+                .limit(5000)
+                .toArray();
+            console.log(`📅 Found ${results.length} bookmarks in date range ${dateRange.start} to ${dateRange.end}`);
+            return results;
+        }
+        catch (error) {
+            console.error('❌ Date range search failed:', error);
+            return [];
+        }
     }
     /**
-     * Search by text token using text_search multi-entry index
+     * Search by text token using Dexie multi-entry index (OPTIMIZED)
      */
     async searchByTextToken(token) {
-        return new Promise((resolve, reject) => {
-            if (!db.database) {
-                reject(new Error('Database not initialized'));
-                return;
-            }
-            const transaction = db.database.transaction([STORES.BOOKMARKS], 'readonly');
-            const store = transaction.objectStore(STORES.BOOKMARKS);
-            const index = store.index('text_search');
-            const request = index.getAll(token);
-            request.onsuccess = () => {
-                resolve(request.result);
-            };
-            request.onerror = () => {
-                reject(new Error('Failed to search by text token'));
-            };
-        });
+        try {
+            // Use native Dexie multi-entry query - leverages textTokens index!
+            const results = await db.bookmarks
+                .where('textTokens')
+                .equals(token.toLowerCase())
+                .reverse()
+                .limit(2000)
+                .toArray();
+            console.log(`🔍 Found ${results.length} bookmarks containing token "${token}"`);
+            return results;
+        }
+        catch (error) {
+            console.error(`❌ Text token search failed for "${token}":`, error);
+            return [];
+        }
     }
     /**
-     * Filter by media presence (no index available)
+     * Filter by media presence using optimized Dexie query (OPTIMIZED)
      */
     async searchByMediaPresence(hasMedia) {
-        // No specific index for this - need to scan bookmarks
-        // This is less efficient, so should be used as secondary filter
-        const recentResult = await db.getRecentBookmarks({ limit: 10000 });
-        const allBookmarks = recentResult.data || [];
-        return allBookmarks.filter(bookmark => hasMedia ?
-            (bookmark.media_urls && bookmark.media_urls.length > 0) :
-            (!bookmark.media_urls || bookmark.media_urls.length === 0));
+        try {
+            // Use Dexie's collection filtering - more efficient than manual scanning
+            const results = await db.bookmarks
+                .filter(bookmark => hasMedia ?
+                (bookmark.media_urls && bookmark.media_urls.length > 0) :
+                (!bookmark.media_urls || bookmark.media_urls.length === 0))
+                .reverse()
+                .limit(5000)
+                .toArray();
+            console.log(`📷 Found ${results.length} bookmarks ${hasMedia ? 'with' : 'without'} media`);
+            return results;
+        }
+        catch (error) {
+            console.error('❌ Media presence search failed:', error);
+            return [];
+        }
     }
     /**
      * Apply text search with token matching
@@ -1854,8 +1688,8 @@ class SearchEngine {
         try {
             // Generate cache key
             const cacheKey = this.queryParser.generateQueryHash(query);
-            // Check cache first
-            if (this.config.caching.enabled) {
+            // Check cache first (but skip for pagination to avoid stale results)
+            if (this.config.caching.enabled && query.offset === 0) {
                 const cached = this.getCachedResult(cacheKey);
                 if (cached) {
                     console.log('🎯 Cache hit for query:', query);
@@ -1868,8 +1702,8 @@ class SearchEngine {
             const result = await this.searchExecutor.executeSearch(parsedQuery);
             // Add suggested queries
             result.suggestedQueries = this.queryParser.extractSuggestions(query);
-            // Cache result if enabled
-            if (this.config.caching.enabled) {
+            // Cache result if enabled (skip for pagination)
+            if (this.config.caching.enabled && query.offset === 0) {
                 this.cacheResult(cacheKey, result);
             }
             // Log performance
@@ -2775,6 +2609,35 @@ function isValidSortIndex(sortIndex) {
         return false;
     }
 }
+/**
+ * Normalize any date format to ISO string for consistent sorting
+ * Handles Twitter's old format: "Thu May 31 08:23:54 +0000 2018"
+ * and ISO format: "2025-09-20T19:10:11.000Z"
+ * @param {string} dateString - The date string to normalize
+ * @returns {string} ISO date string
+ */
+function normalizeDateToISO(dateString) {
+    if (!dateString)
+        return new Date().toISOString();
+    try {
+        // If it's already ISO format, return as-is
+        if (dateString.includes('T') && (dateString.includes('Z') || dateString.includes('+'))) {
+            return new Date(dateString).toISOString();
+        }
+        // Handle Twitter's old format: "Thu May 31 08:23:54 +0000 2018"
+        // Convert to ISO format
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) {
+            console.warn(`⚠️ Invalid date format: ${dateString}, using current date`);
+            return new Date().toISOString();
+        }
+        return date.toISOString();
+    }
+    catch (error) {
+        console.warn(`⚠️ Date normalization failed for: ${dateString}, using current date`);
+        return new Date().toISOString();
+    }
+}
 
 ;// ./src/extension/utils/communicator.js
 /**
@@ -3357,7 +3220,7 @@ const saveBookmarkToLocal = async (bookmark, userTags = []) => {
             text: bookmark.text || '',
             author: bookmark.author || '',
             avatar_url: bookmark.avatar_url || null,
-            created_at: bookmark.created_at || null,
+            created_at: bookmark.created_at ? normalizeDateToISO(bookmark.created_at) : null, // CRITICAL: Normalize date format for consistent sorting
             bookmarked_at: bookmark.sortIndex ? getSortIndexDateISO(bookmark.sortIndex) : null,
             tags: userTags.length > 0 ? userTags : (bookmark.tags || []),
             media_urls: bookmark.media_urls || [],
@@ -4219,6 +4082,7 @@ if (typeof self !== 'undefined') {
                 console.error('❌ Database not initialized');
             }
         },
+        // REMOVED: Unnecessary date normalization function
         // === COMPREHENSIVE IndexedDB DEBUGGING ===
         inspectDB: async () => {
             console.log('🔍 === IndexedDB Inspection ===');
@@ -4620,8 +4484,8 @@ if (typeof self !== 'undefined') {
          */
         async getOldestBookmarkedAt() {
             try {
-                console.log('🔍 OLDEST BY BOOKMARKED_AT: Fetching 20 oldest bookmarked tweets...\n');
-                const result = await db.searchBookmarks({ limit: 20, sortBy: 'bookmarked_at', sortOrder: 'asc' });
+                console.log('🔍 OLDEST BY CREATED_AT: Fetching 20 oldest tweets...\n');
+                const result = await db.searchBookmarks({ limit: 20, sortBy: 'created_at', sortOrder: 'asc' });
                 if (!result.success || !result.data || result.data.length === 0) {
                     console.log('❌ No bookmarks found');
                     return;
@@ -4646,8 +4510,8 @@ if (typeof self !== 'undefined') {
          */
         async getNewestBookmarkedAt() {
             try {
-                console.log('🔍 NEWEST BY BOOKMARKED_AT: Fetching 20 newest bookmarked tweets...\n');
-                const result = await db.searchBookmarks({ limit: 20, sortBy: 'bookmarked_at', sortOrder: 'desc' });
+                console.log('🔍 NEWEST BY CREATED_AT: Fetching 20 newest tweets...\n');
+                const result = await db.searchBookmarks({ limit: 20, sortBy: 'created_at', sortOrder: 'desc' });
                 if (!result.success || !result.data || result.data.length === 0) {
                     console.log('❌ No bookmarks found');
                     return;

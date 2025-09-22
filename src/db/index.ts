@@ -1,10 +1,10 @@
 /**
  * XSaved Extension v2 - Database Module
- * Main exports for the data layer
+ * Consolidated single database implementation
  */
 
-// Main database class (using Dexie.js wrapper)
-export { XSavedDatabase, db } from './database-dexie';
+// Main database class (consolidated Dexie implementation)
+export { XSavedDatabase, db } from './database';
 
 // Type definitions
 export type {

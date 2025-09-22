@@ -14,7 +14,7 @@ import {
   getCsrfToken,
   checkXLoginStatus 
 } from './utils/fetcher.js';
-import { getSortIndexDateISO, getSortIndexDate } from '../utils/sortIndex-utils';
+import { getSortIndexDateISO, getSortIndexDate, normalizeDateToISO } from '../utils/sortIndex-utils';
 import { notifyContentScript, updateProgress, notifyPopup } from './utils/communicator.js';
 import { delay, NetworkError, RateLimitError } from './utils/helpers.js';
 
@@ -256,7 +256,7 @@ const saveBookmarkToLocal = async (bookmark, userTags = []) => {
       text: bookmark.text || '',
       author: bookmark.author || '',
       avatar_url: bookmark.avatar_url || null,
-      created_at: bookmark.created_at || null,
+      created_at: bookmark.created_at ? normalizeDateToISO(bookmark.created_at) : null, // CRITICAL: Normalize date format for consistent sorting
       bookmarked_at: bookmark.sortIndex ? getSortIndexDateISO(bookmark.sortIndex) : null,
       tags: userTags.length > 0 ? userTags : (bookmark.tags || []),
       media_urls: bookmark.media_urls || [],
@@ -1218,6 +1218,8 @@ if (typeof self !== 'undefined') {
         console.error('❌ Database not initialized');
       }
     },
+
+    // REMOVED: Unnecessary date normalization function
     
     // === COMPREHENSIVE IndexedDB DEBUGGING ===
     
@@ -1689,9 +1691,9 @@ if (typeof self !== 'undefined') {
      */
     async getOldestBookmarkedAt() {
       try {
-        console.log('🔍 OLDEST BY BOOKMARKED_AT: Fetching 20 oldest bookmarked tweets...\n');
+        console.log('🔍 OLDEST BY CREATED_AT: Fetching 20 oldest tweets...\n');
         
-        const result = await db.searchBookmarks({ limit: 20, sortBy: 'bookmarked_at', sortOrder: 'asc' });
+        const result = await db.searchBookmarks({ limit: 20, sortBy: 'created_at', sortOrder: 'asc' });
         
         if (!result.success || !result.data || result.data.length === 0) {
           console.log('❌ No bookmarks found');
@@ -1721,9 +1723,9 @@ if (typeof self !== 'undefined') {
      */
     async getNewestBookmarkedAt() {
       try {
-        console.log('🔍 NEWEST BY BOOKMARKED_AT: Fetching 20 newest bookmarked tweets...\n');
+        console.log('🔍 NEWEST BY CREATED_AT: Fetching 20 newest tweets...\n');
         
-        const result = await db.searchBookmarks({ limit: 20, sortBy: 'bookmarked_at', sortOrder: 'desc' });
+        const result = await db.searchBookmarks({ limit: 20, sortBy: 'created_at', sortOrder: 'desc' });
         
         if (!result.success || !result.data || result.data.length === 0) {
           console.log('❌ No bookmarks found');

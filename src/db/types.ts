@@ -88,7 +88,7 @@ export interface IndexConfig {
 export interface QueryOptions {
   limit?: number;
   offset?: number;
-  sortBy?: 'created_at' | 'bookmarked_at' | 'author';
+  sortBy?: 'created_at' | 'author';
   sortOrder?: 'asc' | 'desc';
   orderBy?: string;
   direction?: 'asc' | 'desc';

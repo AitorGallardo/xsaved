@@ -16,7 +16,7 @@ export interface SearchQuery {
   };
   excludeTags?: string[];           // Tags to exclude
   hasMedia?: boolean;               // Only bookmarks with media
-  sortBy?: 'relevance' | 'created_at' | 'bookmarked_at' | 'author';
+  sortBy?: 'relevance' | 'created_at' | 'author';
   sortOrder?: 'asc' | 'desc';      // Sort direction
   limit?: number;                   // Max results (default: 50)
   offset?: number;                  // Pagination offset
@@ -32,7 +32,8 @@ export interface ParsedQuery {
   filters: QueryFilter[];           // Additional filters
   queryPlan: QueryExecutionPlan;    // Optimized execution order
   originalQuery: SearchQuery;       // Original query for reference
-  sortBy?: 'relevance' | 'created_at' | 'bookmarked_at' | 'author';
+  sortBy?: 'relevance' | 'created_at' | 'author';
+  offset?: number;                  // Pagination offset
   sortOrder?: 'asc' | 'desc';
   limit?: number;
 }

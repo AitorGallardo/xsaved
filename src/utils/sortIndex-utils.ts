@@ -79,3 +79,35 @@ export function isValidSortIndex(sortIndex: string | number | bigint): boolean {
         return false;
     }
 }
+
+/**
+ * Normalize any date format to ISO string for consistent sorting
+ * Handles Twitter's old format: "Thu May 31 08:23:54 +0000 2018"
+ * and ISO format: "2025-09-20T19:10:11.000Z"
+ * @param {string} dateString - The date string to normalize
+ * @returns {string} ISO date string
+ */
+export function normalizeDateToISO(dateString: string): string {
+    if (!dateString) return new Date().toISOString();
+    
+    try {
+        // If it's already ISO format, return as-is
+        if (dateString.includes('T') && (dateString.includes('Z') || dateString.includes('+'))) {
+            return new Date(dateString).toISOString();
+        }
+        
+        // Handle Twitter's old format: "Thu May 31 08:23:54 +0000 2018"
+        // Convert to ISO format
+        const date = new Date(dateString);
+        
+        if (isNaN(date.getTime())) {
+            console.warn(`⚠️ Invalid date format: ${dateString}, using current date`);
+            return new Date().toISOString();
+        }
+        
+        return date.toISOString();
+    } catch (error) {
+        console.warn(`⚠️ Date normalization failed for: ${dateString}, using current date`);
+        return new Date().toISOString();
+    }
+}

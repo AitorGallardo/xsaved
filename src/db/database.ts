@@ -1,185 +1,201 @@
 /**
- * XSaved Extension v2 - Database Manager
- * High-performance IndexedDB wrapper with transaction management
+ * XSaved Extension v2 - Consolidated Database Layer
+ * Single Dexie implementation with consistent API
+ * Replaces: database.ts (877 lines) + database-dexie.ts (534 lines) 
  */
 
+import Dexie, { Table } from 'dexie';
 import { 
   BookmarkEntity, 
-  SearchIndexEntry, 
   TagEntity, 
   CollectionEntity, 
   SettingsEntity,
+  SearchIndexEntry,
   DatabaseResult,
   PerformanceMetrics,
   QueryOptions
 } from './types';
+import { normalizeDateToISO } from '../utils/sortIndex-utils';
 
-import { 
-  DB_CONFIG, 
-  STORES, 
-  PERFORMANCE_CONFIG, 
-  DEFAULT_SETTINGS,
-  DB_ERRORS 
-} from './config';
+// ========================
+// DATABASE SCHEMA DESIGN
+// ========================
 
-export class XSavedDatabase {
-  private db: IDBDatabase | null = null;
+export class XSavedDatabase extends Dexie {
+  // Tables with strong typing
+  bookmarks!: Table<BookmarkEntity, string>;
+  tags!: Table<TagEntity, string>;
+  collections!: Table<CollectionEntity, string>;
+  settings!: Table<SettingsEntity, string>;
+  searchIndex!: Table<SearchIndexEntry, string>; // bookmarkId as primary key
+  
   private isInitialized = false;
-  private initPromise: Promise<void> | null = null;
 
-  /**
-   * Get database instance (for advanced operations)
-   */
-  get database(): IDBDatabase | null {
-    return this.db;
+  constructor() {
+    super('XSavedDB');
+    
+    // Define schema with indexes
+    this.version(1).stores({
+      // Bookmarks: Primary storage with multi-entry indexes for fast queries
+      bookmarks: `
+        id,
+        author,
+        created_at,
+        bookmarked_at,
+        *tags,
+        *textTokens
+      `,
+      
+      // Tags: Separate analytics table for tag management
+      tags: `
+        name,
+        usageCount,
+        createdAt,
+        category
+      `,
+      
+      // Collections: User-defined bookmark groupings
+      collections: `
+        id,
+        name,
+        createdAt,
+        *bookmarkIds
+      `,
+      
+      // Settings: App configuration
+      settings: `
+        key,
+        value,
+        updatedAt
+      `,
+      
+      // Search Index: Full-text search optimization
+      searchIndex: `
+        bookmarkId,
+        *tokens,
+        relevanceScore,
+        lastUpdated
+      `
+    });
+
+    // Version 2: Add avatar_url field to bookmarks
+    // Note: Dexie automatically handles schema changes by preserving existing data
+    this.version(2).stores({
+      // Bookmarks: Updated schema with avatar_url field
+      bookmarks: `
+        id,
+        author,
+        avatar_url,
+        created_at,
+        bookmarked_at,
+        *tags,
+        *textTokens
+      `,
+      
+      // Keep other stores unchanged
+      tags: `
+        name,
+        usageCount,
+        createdAt,
+        category
+      `,
+      
+      collections: `
+        id,
+        name,
+        createdAt,
+        *bookmarkIds
+      `,
+      
+      settings: `
+        key,
+        value,
+        updatedAt
+      `,
+      
+      searchIndex: `
+        bookmarkId,
+        *tokens,
+        relevanceScore,
+        lastUpdated
+      `
+    });
+
+    // Add hooks for automatic data processing
+    this.bookmarks.hook('creating', (primKey, obj, trans) => {
+      // Auto-generate textTokens if not provided
+      if (!obj.textTokens) {
+        obj.textTokens = this.tokenizeText(obj.text || '');
+      }
+      
+      // Ensure both timestamps are valid ISO strings
+      const now = new Date().toISOString();
+      
+      if (!obj.created_at || !this.isValidDate(obj.created_at)) {
+        obj.created_at = now;
+        console.warn(`⚠️ Invalid created_at for ${obj.id}, using current time`);
+      } else if (!obj.created_at.includes('T')) {
+        // Convert Twitter format to ISO format
+        obj.created_at = new Date(obj.created_at).toISOString();
+      }
+      
+      if (!obj.bookmarked_at || !this.isValidDate(obj.bookmarked_at)) {
+        obj.bookmarked_at = obj.created_at || now;
+        console.warn(`⚠️ Invalid bookmarked_at for ${obj.id}, using created_at`);
+      } else if (!obj.bookmarked_at.includes('T')) {
+        // Convert Twitter format to ISO format
+        obj.bookmarked_at = new Date(obj.bookmarked_at).toISOString();
+      }
+      
+      console.log(`🔄 Creating bookmark: ${obj.id}`);
+    });
+
+    this.bookmarks.hook('updating', (modifications, primKey, obj, trans) => {
+      console.log(`🔄 Updating bookmark: ${primKey}`, modifications);
+    });
+
+    this.bookmarks.hook('deleting', (primKey, obj, trans) => {
+      console.log(`🗑️ Deleting bookmark: ${primKey}`);
+    });
   }
 
+  // ========================
+  // INITIALIZATION & UTILITIES
+  // ========================
+
   /**
-   * Initialize database connection with schema setup
+   * Initialize database connection
    */
   async initialize(): Promise<DatabaseResult<void>> {
-    if (this.isInitialized) {
-      return { success: true };
-    }
-
-    if (this.initPromise) {
-      await this.initPromise;
-      return { success: true };
-    }
-
-    this.initPromise = this._performInitialization();
-    
     try {
-      await this.initPromise;
+      await this.open();
+      this.isInitialized = true;
+      console.log('✅ Consolidated Dexie database initialized');
       return { success: true };
     } catch (error) {
+      console.error('❌ Failed to initialize database:', error);
       return { 
         success: false, 
-        error: error instanceof Error ? error.message : 'Unknown initialization error'
+        error: error instanceof Error ? error.message : 'Database initialization failed'
       };
     }
   }
 
-  private async _performInitialization(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      // Check IndexedDB support (compatible with both browser and service worker)
-      if (!self.indexedDB && !globalThis.indexedDB) {
-        reject(new Error(DB_ERRORS.NOT_SUPPORTED));
-        return;
-      }
-
-      const request = indexedDB.open(DB_CONFIG.name, DB_CONFIG.version);
-
-      request.onerror = () => {
-        reject(new Error(DB_ERRORS.OPEN_FAILED));
-      };
-
-      request.onsuccess = (event) => {
-        this.db = (event.target as IDBOpenDBRequest).result;
-        this.isInitialized = true;
-        
-        console.log('✅ IndexedDB opened successfully');
-        console.log('📊 Database info:', {
-          name: this.db.name,
-          version: this.db.version,
-          objectStoreNames: Array.from(this.db.objectStoreNames)
-        });
-        
-        // Detailed store verification
-        console.log('🔍 Verifying object stores:');
-        Array.from(this.db.objectStoreNames).forEach(storeName => {
-          console.log(`   ✅ Store "${storeName}" exists`);
-        });
-        
-        // Check if stores exist
-        if (!this.db.objectStoreNames.contains(STORES.BOOKMARKS)) {
-          console.warn('⚠️ Bookmarks store missing! Database may need to be recreated.');
-        }
-        
-        // Setup error handling
-        this.db.onerror = (error) => {
-          console.error('Database error:', error);
-        };
-
-        resolve();
-      };
-
-      request.onupgradeneeded = (event) => {
-        console.log('📦 Setting up database schema...');
-        const db = (event.target as IDBOpenDBRequest).result;
-        this._createSchema(db);
-        console.log('✅ Database schema created successfully');
-      };
-    });
-  }
-
   /**
-   * Create database schema with optimized indexes
+   * Get database instance (for compatibility)
    */
-  private _createSchema(db: IDBDatabase): void {
-    Object.entries(DB_CONFIG.stores).forEach(([storeName, storeConfig]) => {
-      // Create object store
-      const store = db.createObjectStore(storeName, {
-        keyPath: storeConfig.keyPath,
-        autoIncrement: storeConfig.autoIncrement || false
-      });
-
-      // Create indexes
-      storeConfig.indexes.forEach((indexConfig) => {
-        store.createIndex(indexConfig.name, indexConfig.keyPath, {
-          unique: indexConfig.unique || false,
-          multiEntry: indexConfig.multiEntry || false
-        });
-      });
-    });
-
-    console.log('✅ Database schema created with optimized indexes');
-  }
-
-  /**
-   * Ensure database is initialized before operations
-   */
-  private async _ensureInitialized(): Promise<void> {
-    if (!this.isInitialized) {
-      const result = await this.initialize();
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to initialize database');
-      }
+  get database(): IDBDatabase | null {
+    try {
+      return this.backendDB();
+    } catch (error) {
+      return null;
     }
   }
 
   /**
-   * Create a database transaction with error handling
+   * Performance tracking wrapper
    */
-  private _createTransaction(
-    storeNames: string | string[], 
-    mode: IDBTransactionMode = 'readonly'
-  ): IDBTransaction {
-    if (!this.db) {
-      throw new Error('Database not initialized');
-    }
-
-    const transaction = this.db.transaction(storeNames, mode);
-    
-    transaction.onerror = (event) => {
-      console.error('❌ Transaction error:', event);
-      console.error('❌ Transaction details:', {
-        mode,
-        storeNames,
-        error: transaction.error,
-        db: this.db?.name,
-        dbVersion: this.db?.version,
-        objectStoreNames: this.db ? Array.from(this.db.objectStoreNames) : 'N/A'
-      });
-    };
-
-    return transaction;
-  }
-
-  /**
-   * Performance monitoring wrapper
-   */
-  private async _withPerformanceTracking<T>(
+  private async withPerformanceTracking<T>(
     operation: string,
     fn: () => Promise<T>
   ): Promise<{ result: T; metrics: PerformanceMetrics }> {
@@ -196,8 +212,7 @@ export class XSavedDatabase {
         timestamp: new Date().toISOString()
       };
 
-      // Log slow operations
-      if (duration > PERFORMANCE_CONFIG.SEARCH_TARGET_MS) {
+      if (duration > 50) { // Log slow operations
         console.warn(`⚠️ Slow operation: ${operation} took ${duration.toFixed(2)}ms`);
       }
 
@@ -214,17 +229,15 @@ export class XSavedDatabase {
   // ========================
 
   /**
-   * Add a new bookmark
+   * Add a bookmark with consistent API
    */
   async addBookmark(bookmark: BookmarkEntity): Promise<DatabaseResult<BookmarkEntity>> {
-    await this._ensureInitialized();
-
     try {
-      const { result, metrics } = await this._withPerformanceTracking(
+      const { result, metrics } = await this.withPerformanceTracking(
         'addBookmark',
         () => this._addBookmarkInternal(bookmark)
       );
-
+      
       return { 
         success: true, 
         data: result,
@@ -238,93 +251,28 @@ export class XSavedDatabase {
     }
   }
 
+  /**
+   * Internal bookmark addition
+   */
   private async _addBookmarkInternal(bookmark: BookmarkEntity): Promise<BookmarkEntity> {
-    return new Promise(async (resolve, reject) => {
-      try {
-        // DEBUG: Log incoming bookmark data
-        console.log(`🔍 Database: Incoming bookmark data for ${bookmark.id}:`, {
-          hasSortIndex: !!bookmark.sortIndex,
-          sortIndexValue: bookmark.sortIndex,
-          hasBookmarkedAt: !!bookmark.bookmarked_at,
-          bookmarkedAtValue: bookmark.bookmarked_at,
-          hasCreatedAt: !!bookmark.created_at,
-          createdAtValue: bookmark.created_at,
-          allKeys: Object.keys(bookmark)
-        });
-        
-        // Ensure required fields
-        const bookmarkToAdd: BookmarkEntity = {
-          ...bookmark,
-          bookmarked_at: bookmark.sortIndex ? getSortIndexDateISO(bookmark.sortIndex) : (bookmark.bookmarked_at || new Date().toISOString()),
-          tags: bookmark.tags || [],
-          textTokens: this._tokenizeText(bookmark.text)
-        };
-        
-        // DEBUG: Log processed bookmark data
-        console.log(`🔧 Database: Processed bookmark entity for ${bookmark.id}:`, {
-          hasSortIndex: !!bookmark.sortIndex,
-          sortIndexValue: bookmark.sortIndex,
-          hasBookmarkedAt: !!bookmarkToAdd.bookmarked_at,
-          bookmarkedAtValue: bookmarkToAdd.bookmarked_at,
-          hasCreatedAt: !!bookmarkToAdd.created_at,
-          createdAtValue: bookmarkToAdd.created_at,
-          bookmarkedAtSource: bookmark.sortIndex ? 'sortIndex' : (bookmark.bookmarked_at ? 'bookmarked_at' : 'new Date()')
-        });
-        
-        // Create transaction for both bookmarks and tags stores
-        const transaction = this._createTransaction([STORES.BOOKMARKS, STORES.TAGS], 'readwrite');
-        const bookmarksStore = transaction.objectStore(STORES.BOOKMARKS);
-        const tagsStore = transaction.objectStore(STORES.TAGS);
-
-        // Save bookmark first
-        const bookmarkRequest = bookmarksStore.add(bookmarkToAdd);
-
-        bookmarkRequest.onsuccess = async () => {
-          try {
-            // Update tag analytics after bookmark is saved
-            await this._updateTagAnalytics(bookmarkToAdd.tags, tagsStore);
-            console.log(`✅ Bookmark and tags saved successfully: ${bookmarkToAdd.id}`);
-            resolve(bookmarkToAdd);
-          } catch (tagError) {
-            console.error('❌ Failed to update tag analytics:', tagError);
-            // Don't reject - bookmark was saved successfully
-            resolve(bookmarkToAdd);
-          }
-        };
-
-        bookmarkRequest.onerror = (event) => {
-          console.error('❌ IndexedDB add request error:', event);
-          console.error('❌ Request error details:', {
-            error: bookmarkRequest.error,
-            transaction: transaction.error,
-            objectStore: bookmarksStore.name,
-            bookmark: bookmarkToAdd
-          });
-          reject(new Error(`Failed to add bookmark to store: ${bookmarkRequest.error?.message || 'Unknown error'}`));
-        };
-
-      } catch (error) {
-        console.error('❌ Error in _addBookmarkInternal:', error);
-        reject(error);
-      }
-    });
+    await this.bookmarks.add(bookmark);
+    console.log(`✅ Bookmark added successfully: ${bookmark.id}`);
+    return bookmark;
   }
 
   /**
    * Get bookmark by ID
    */
   async getBookmark(id: string): Promise<DatabaseResult<BookmarkEntity | null>> {
-    await this._ensureInitialized();
-
     try {
-      const { result, metrics } = await this._withPerformanceTracking(
+      const { result, metrics } = await this.withPerformanceTracking(
         'getBookmark',
-        () => this._getBookmarkInternal(id)
+        () => this.bookmarks.get(id)
       );
-
+      
       return { 
         success: true, 
-        data: result,
+        data: result || null,
         metrics 
       };
     } catch (error) {
@@ -335,34 +283,289 @@ export class XSavedDatabase {
     }
   }
 
-  private async _getBookmarkInternal(id: string): Promise<BookmarkEntity | null> {
-    return new Promise((resolve, reject) => {
-      const transaction = this._createTransaction(STORES.BOOKMARKS, 'readonly');
-      const store = transaction.objectStore(STORES.BOOKMARKS);
-      const request = store.get(id);
-
-      request.onsuccess = () => {
-        resolve(request.result || null);
+  /**
+   * Update existing bookmark
+   */
+  async updateBookmark(id: string, updates: Partial<BookmarkEntity>): Promise<DatabaseResult<BookmarkEntity | null>> {
+    try {
+      const { result, metrics } = await this.withPerformanceTracking(
+        'updateBookmark',
+        async () => {
+          const updated = await this.bookmarks.update(id, updates);
+          if (updated) {
+            const updatedBookmark = await this.bookmarks.get(id);
+            console.log(`✅ Bookmark updated: ${id}`);
+            return updatedBookmark || null;
+          } else {
+            console.warn(`⚠️ Bookmark not found for update: ${id}`);
+            return null;
+          }
+        }
+      );
+      
+      return { 
+        success: true, 
+        data: result,
+        metrics 
       };
-
-      request.onerror = () => {
-        reject(new Error('Failed to get bookmark'));
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to update bookmark'
       };
-    });
+    }
   }
 
   /**
-   * Get recent bookmarks (most common query)
+   * Delete bookmark by ID
    */
-  async getRecentBookmarks(options: QueryOptions = {}): Promise<DatabaseResult<BookmarkEntity[]>> {
-    await this._ensureInitialized();
+  async deleteBookmark(id: string): Promise<DatabaseResult<boolean>> {
+    try {
+      const { result, metrics } = await this.withPerformanceTracking(
+        'deleteBookmark',
+        async () => {
+          await this.bookmarks.delete(id);
+          console.log(`✅ Bookmark deleted: ${id}`);
+          return true;
+        }
+      );
+      
+      return { 
+        success: true, 
+        data: result,
+        metrics 
+      };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to delete bookmark'
+      };
+    }
+  }
+
+  /**
+   * Get all bookmarks with optional sorting and pagination
+   * ENHANCED: Now supports offset for pagination
+   */
+  async getAllBookmarks(options: {
+    sortBy?: 'created_at' | 'author';
+    sortOrder?: 'asc' | 'desc';
+    limit?: number;
+    offset?: number;  // NEW: Pagination support
+  } = {}): Promise<BookmarkEntity[]> {
+    try {
+      // OPTION A: Ultra-simple Dexie pagination (works because dates are normalized when saving)
+      let query = this.bookmarks.orderBy(options.sortBy || 'created_at');
+      
+      // Apply sort order
+      if (options.sortOrder === 'asc') {
+        // Keep ascending order
+      } else {
+        query = query.reverse(); // Default to descending (newest first)
+      }
+      
+      // Apply pagination (Dexie handles this efficiently)
+      if (options.offset) {
+        query = query.offset(options.offset);
+      }
+      
+      if (options.limit) {
+        query = query.limit(options.limit);
+      }
+      
+      const bookmarks = await query.toArray();
+      
+      // Clean: No console logging
+      
+      return bookmarks;
+    } catch (error) {
+      console.error('❌ Failed to get all bookmarks:', error);
+      return [];
+    }
+  }
+
+  // ========================
+  // SEARCH OPERATIONS
+  // ========================
+
+  /**
+   * Search bookmarks by tags
+   */
+  async searchByTags(tags: string[], options: {
+    limit?: number;
+    matchAll?: boolean; // true = AND, false = OR
+  } = {}): Promise<BookmarkEntity[]> {
+    try {
+      let query;
+      
+      if (options.matchAll) {
+        // AND operation: bookmark must have ALL tags
+        query = this.bookmarks.where('tags').anyOf(tags);
+        const results = await query.toArray();
+        
+        // Filter to only bookmarks that have ALL required tags
+        return results.filter(bookmark => 
+          tags.every(tag => bookmark.tags?.includes(tag))
+        ).slice(0, options.limit || 50);
+      } else {
+        // OR operation: bookmark must have ANY of the tags
+        query = this.bookmarks
+          .where('tags')
+          .anyOf(tags)
+          .reverse()
+          .limit(options.limit || 50);
+        
+        return await query.toArray();
+      }
+    } catch (error) {
+      console.error('❌ Tag search failed:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Search bookmarks by author
+   */
+  async searchByAuthor(author: string, options: {
+    limit?: number;
+  } = {}): Promise<BookmarkEntity[]> {
+    try {
+      const results = await this.bookmarks
+        .where('author')
+        .equalsIgnoreCase(author)
+        .reverse()
+        .limit(options.limit || 50)
+        .toArray();
+      
+      console.log(`👤 Found ${results.length} bookmarks by @${author}`);
+      return results;
+    } catch (error) {
+      console.error(`❌ Author search failed for @${author}:`, error);
+      return [];
+    }
+  }
+
+  // ========================
+  // TAG OPERATIONS
+  // ========================
+
+  /**
+   * Get all tags with usage analytics
+   */
+  async getAllTags(): Promise<TagEntity[]> {
+    try {
+      return await this.tags.orderBy('usageCount').reverse().toArray();
+    } catch (error) {
+      console.error('❌ Failed to get tags:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get popular tags (by usage count)
+   */
+  async getPopularTags(limit: number = 20): Promise<TagEntity[]> {
+    try {
+      return await this.tags
+        .orderBy('usageCount')
+        .reverse()
+        .limit(limit)
+        .toArray();
+    } catch (error) {
+      console.error('❌ Failed to get popular tags:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Search tags by name
+   */
+  async searchTags(query: string, limit: number = 10): Promise<TagEntity[]> {
+    try {
+      if (!query.trim()) return [];
+      
+      return await this.tags
+        .filter(tag => tag.name.toLowerCase().includes(query.toLowerCase()))
+        .limit(limit)
+        .toArray();
+    } catch (error) {
+      console.error('❌ Failed to search tags:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Update tag analytics when bookmarks change
+   */
+  private async updateTagAnalytics(tags: string[]): Promise<void> {
+    if (!tags || tags.length === 0) return;
 
     try {
-      const { result, metrics } = await this._withPerformanceTracking(
-        'getRecentBookmarks',
-        () => this._getRecentBookmarksInternal(options)
-      );
+      const timestamp = new Date().toISOString();
+      
+      await this.transaction('rw', this.tags, async () => {
+        for (const tagName of tags) {
+          if (!tagName.trim()) continue;
+          
+          const existingTag = await this.tags.get(tagName);
+          
+          if (existingTag) {
+            await this.tags.update(tagName, {
+              usageCount: (existingTag.usageCount || 0) + 1
+            });
+          } else {
+            await this.tags.add({
+              name: tagName,
+              usageCount: 1,
+              createdAt: timestamp
+            });
+          }
+        }
+      });
+      
+      console.log(`📊 Updated analytics for ${tags.length} tags`);
+    } catch (error) {
+      console.error('❌ Failed to update tag analytics:', error);
+    }
+  }
 
+  // ========================
+  // UTILITY METHODS
+  // ========================
+
+  /**
+   * Tokenize text for search indexing
+   */
+  private tokenizeText(text: string): string[] {
+    if (!text) return [];
+    
+    return text
+      .toLowerCase()
+      .replace(/[^\w\s#@]/g, ' ') // Keep hashtags and mentions
+      .split(/\s+/)
+      .filter(token => token.length > 2) // Only tokens longer than 2 chars
+      .slice(0, 50); // Limit tokens per bookmark
+  }
+
+  /**
+   * Get recent bookmarks (compatibility method for search engine)
+   */
+  async getRecentBookmarks(options: {
+    limit?: number;
+    sortBy?: 'created_at';
+    offset?: number;  // CRITICAL FIX: Add offset support for pagination
+  } = {}): Promise<DatabaseResult<BookmarkEntity[]>> {
+    try {
+      const { result, metrics } = await this.withPerformanceTracking(
+        'getRecentBookmarks',
+        () => this.getAllBookmarks({
+          sortBy: options.sortBy || 'created_at',
+          sortOrder: 'desc',
+          limit: options.limit || 50,
+          offset: options.offset  // CRITICAL FIX: Pass offset to getAllBookmarks
+        })
+      );
+      
       return { 
         success: true, 
         data: result,
@@ -376,49 +579,16 @@ export class XSavedDatabase {
     }
   }
 
-  private async _getRecentBookmarksInternal(options: QueryOptions): Promise<BookmarkEntity[]> {
-    return new Promise((resolve, reject) => {
-      const transaction = this._createTransaction(STORES.BOOKMARKS, 'readonly');
-      const store = transaction.objectStore(STORES.BOOKMARKS);
-      const index = store.index('bookmark_timestamp');
-      
-      const results: BookmarkEntity[] = [];
-      const limit = options.limit || 50;
-      let count = 0;
-
-      // Use cursor for efficient pagination
-      const request = index.openCursor(null, 'prev'); // Most recent first
-
-      request.onsuccess = (event) => {
-        const cursor = (event.target as IDBRequest).result;
-        
-        if (cursor && count < limit) {
-          results.push(cursor.value);
-          count++;
-          cursor.continue();
-        } else {
-          resolve(results);
-        }
-      };
-
-      request.onerror = () => {
-        reject(new Error('Failed to get recent bookmarks'));
-      };
-    });
-  }
-
   /**
-   * Search bookmarks by tags (optimized with multi-entry index)
+   * Get bookmarks by tag (compatibility method for search engine)
    */
   async getBookmarksByTag(tag: string): Promise<DatabaseResult<BookmarkEntity[]>> {
-    await this._ensureInitialized();
-
     try {
-      const { result, metrics } = await this._withPerformanceTracking(
+      const { result, metrics } = await this.withPerformanceTracking(
         'getBookmarksByTag',
-        () => this._getBookmarksByTagInternal(tag)
+        () => this.searchByTags([tag], { limit: 1000, matchAll: false })
       );
-
+      
       return { 
         success: true, 
         data: result,
@@ -427,101 +597,75 @@ export class XSavedDatabase {
     } catch (error) {
       return { 
         success: false, 
-        error: error instanceof Error ? error.message : 'Failed to search by tag'
+        error: error instanceof Error ? error.message : 'Failed to get bookmarks by tag'
       };
     }
   }
 
-  private async _getBookmarksByTagInternal(tag: string): Promise<BookmarkEntity[]> {
-    return new Promise((resolve, reject) => {
-      const transaction = this._createTransaction(STORES.BOOKMARKS, 'readonly');
-      const store = transaction.objectStore(STORES.BOOKMARKS);
-      const index = store.index('tags');
-      
-      const request = index.getAll(tag); // Multi-entry index magic!
-
-      request.onsuccess = () => {
-        resolve(request.result);
-      };
-
-      request.onerror = () => {
-        reject(new Error('Failed to search by tag'));
-      };
-    });
-  }
-
   /**
-   * Delete bookmark by ID
+   * Search bookmarks with various criteria (compatible with service worker)
+   * ENHANCED: Now supports pagination with offset
    */
-  async deleteBookmark(id: string): Promise<DatabaseResult<void>> {
-    await this._ensureInitialized();
-
-    try {
-      const { metrics } = await this._withPerformanceTracking(
-        'deleteBookmark',
-        () => this._deleteBookmarkInternal(id)
-      );
-
-      return { 
-        success: true,
-        metrics 
-      };
-    } catch (error) {
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Failed to delete bookmark'
-      };
-    }
-  }
-
-  private async _deleteBookmarkInternal(id: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const transaction = this._createTransaction(STORES.BOOKMARKS, 'readwrite');
-      const store = transaction.objectStore(STORES.BOOKMARKS);
-      const request = store.delete(id);
-
-      request.onsuccess = () => {
-        resolve();
-      };
-
-      request.onerror = () => {
-        reject(new Error('Failed to delete bookmark'));
-      };
-    });
-  }
-
-  // ========================
-  // UTILITY METHODS
-  // ========================
-
-  /**
-   * Tokenize text for search indexing
-   */
-  private _tokenizeText(text: string): string[] {
-    return text
-      .toLowerCase()
-      .replace(/[^\w\s#@]/g, ' ')  // Keep hashtags and mentions
-      .split(/\s+/)
-      .filter(token => token.length > 2)  // Filter short tokens
-      .slice(0, 50);  // Limit tokens to prevent bloat
-  }
-
-  /**
-   * Get all bookmarks with optional filtering and sorting
-   */
-  async getAllBookmarks(options: {
+  async searchBookmarks(options: {
+    text?: string;
+    tags?: string[];
+    author?: string;
+    dateFrom?: string;
+    dateTo?: string;
     limit?: number;
-    sortBy?: 'created_at' | 'bookmark_timestamp';
+    offset?: number;  // NEW: Pagination support
+    sortBy?: 'created_at' | 'relevance';
     sortOrder?: 'asc' | 'desc';
   } = {}): Promise<DatabaseResult<BookmarkEntity[]>> {
-    await this._ensureInitialized();
-
     try {
-      const { result, metrics } = await this._withPerformanceTracking(
-        'getAllBookmarks',
-        () => this._getAllBookmarksInternal(options)
-      );
+      const { result, metrics } = await this.withPerformanceTracking(
+        'searchBookmarks',
+        async () => {
+          let results: BookmarkEntity[] = [];
 
+          // Handle different search types
+          if (options.text) {
+            results = await this._searchBookmarksByText(options.text, {
+              limit: options.limit,
+              offset: options.offset,  // NEW: Pass offset for pagination
+              sortBy: options.sortBy as any,
+              sortOrder: options.sortOrder
+            });
+          } else if (options.tags && options.tags.length > 0) {
+            results = await this.searchByTags(options.tags, {
+              limit: options.limit,
+              matchAll: false
+            });
+          } else if (options.author) {
+            results = await this.searchByAuthor(options.author, {
+              limit: options.limit
+            });
+          } else {
+            results = await this.getAllBookmarks({
+              sortBy: options.sortBy === 'relevance' ? 'created_at' : options.sortBy,
+              sortOrder: options.sortOrder,
+              limit: options.limit,
+              offset: options.offset  // NEW: Pass offset for pagination
+            });
+          }
+
+          // Apply date filtering if specified
+          if (options.dateFrom || options.dateTo) {
+            results = results.filter(bookmark => {
+              const bookmarkDate = new Date(bookmark.created_at);
+              const fromDate = options.dateFrom ? new Date(options.dateFrom) : null;
+              const toDate = options.dateTo ? new Date(options.dateTo) : null;
+
+              if (fromDate && bookmarkDate < fromDate) return false;
+              if (toDate && bookmarkDate > toDate) return false;
+              return true;
+            });
+          }
+
+          return results;
+        }
+      );
+      
       return { 
         success: true, 
         data: result,
@@ -530,296 +674,167 @@ export class XSavedDatabase {
     } catch (error) {
       return { 
         success: false, 
-        error: error instanceof Error ? error.message : 'Failed to get all bookmarks'
+        error: error instanceof Error ? error.message : 'Search failed'
       };
     }
-  }
-
-  private async _getAllBookmarksInternal(options: {
-    limit?: number;
-    sortBy?: 'created_at' | 'bookmark_timestamp';
-    sortOrder?: 'asc' | 'desc';
-  }): Promise<BookmarkEntity[]> {
-    return new Promise((resolve, reject) => {
-      const transaction = this._createTransaction(STORES.BOOKMARKS, 'readonly');
-      const store = transaction.objectStore(STORES.BOOKMARKS);
-      
-      const sortBy = options.sortBy || 'created_at';
-      const direction = options.sortOrder === 'asc' ? 'next' : 'prev';
-      
-      let request: IDBRequest;
-      if (store.indexNames.contains(sortBy)) {
-        const index = store.index(sortBy);
-        request = index.openCursor(null, direction);
-      } else {
-        request = store.openCursor(null, direction);
-      }
-
-      const results: BookmarkEntity[] = [];
-      const limit = options.limit || 1000;
-
-      request.onsuccess = (event) => {
-        const cursor = (event.target as IDBRequest).result;
-        if (cursor && results.length < limit) {
-          results.push(cursor.value);
-          cursor.continue();
-        } else {
-          resolve(results);
-        }
-      };
-
-      request.onerror = () => {
-        reject(new Error('Failed to get all bookmarks'));
-      };
-    });
   }
 
   /**
-   * Clear all bookmarks from database
+   * Internal text search method
+   * ENHANCED: Now supports offset for pagination
    */
-  async clearAllBookmarks(): Promise<DatabaseResult<void>> {
-    await this._ensureInitialized();
-
-    try {
-      const { result, metrics } = await this._withPerformanceTracking(
-        'clearAllBookmarks',
-        () => this._clearAllBookmarksInternal()
-      );
-
-      return { 
-        success: true, 
-        data: result,
-        metrics 
-      };
-    } catch (error) {
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Failed to clear all bookmarks'
-      };
+  private async _searchBookmarksByText(query: string, options: {
+    limit?: number;
+    offset?: number;  // NEW: Pagination support
+    sortBy?: 'created_at';
+    sortOrder?: 'asc' | 'desc';
+  } = {}): Promise<BookmarkEntity[]> {
+    if (!query.trim()) {
+      return this.getAllBookmarks(options);
     }
+
+    const tokens = this.tokenizeText(query);
+    
+    // Search using multi-entry textTokens index with pagination
+    let query_builder = this.bookmarks
+      .where('textTokens')
+      .anyOfIgnoreCase(tokens);
+    
+    // Apply sorting
+    if (options.sortOrder === 'asc') {
+      // Keep natural order
+    } else {
+      query_builder = query_builder.reverse(); // Default to newest first
+    }
+    
+    // Apply pagination
+    if (options.offset) {
+      query_builder = query_builder.offset(options.offset);
+    }
+    
+    if (options.limit) {
+      query_builder = query_builder.limit(options.limit);
+    }
+    
+    const results = await query_builder.toArray();
+    
+    // Apply pagination to search results
+    const result = results.slice(options.offset || 0, (options.offset || 0) + (options.limit || 10000));
+    
+    console.log(`🔍 Text search "${query}" returned ${result.length} bookmarks`);
+    return result;
   }
 
-  private async _clearAllBookmarksInternal(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const transaction = this._createTransaction(STORES.BOOKMARKS, 'readwrite');
-      const store = transaction.objectStore(STORES.BOOKMARKS);
-
-      const request = store.clear();
-
-      request.onsuccess = () => {
-        resolve();
-      };
-
-      request.onerror = () => {
-        reject(new Error('Failed to clear bookmarks store'));
-      };
-    });
-  }
+  // REMOVED: Unnecessary date normalization - dates are already consistent
 
   /**
    * Get database statistics
    */
-  async getStats(): Promise<DatabaseResult<any>> {
-    await this._ensureInitialized();
-
+  async getStats(): Promise<DatabaseResult<{
+    totalBookmarks: number;
+    totalTags: number;
+    totalCollections: number;
+    dbSize?: number;
+  }>> {
     try {
-      const bookmarkCount = await this._getStoreCount(STORES.BOOKMARKS);
-      const tagCount = await this._getStoreCount(STORES.TAGS);
-      
-      return {
-        success: true,
-        data: {
-          bookmarks: bookmarkCount,
-          tags: tagCount,
-          version: DB_CONFIG.version,
-          initialized: this.isInitialized
+      const { result, metrics } = await this.withPerformanceTracking(
+        'getStats',
+        async () => {
+          const [bookmarkCount, tagCount, collectionCount] = await Promise.all([
+            this.bookmarks.count(),
+            this.tags.count(),
+            this.collections.count()
+          ]);
+
+          return {
+            totalBookmarks: bookmarkCount,
+            totalTags: tagCount,
+            totalCollections: collectionCount
+          };
         }
+      );
+      
+      return { 
+        success: true, 
+        data: result,
+        metrics 
       };
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to get stats'
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to get database stats'
       };
     }
   }
 
-  private async _getStoreCount(storeName: string): Promise<number> {
-    return new Promise((resolve, reject) => {
-      const transaction = this._createTransaction(storeName, 'readonly');
-      const store = transaction.objectStore(storeName);
-      const request = store.count();
-
-      request.onsuccess = () => {
-        resolve(request.result);
-      };
-
-      request.onerror = () => {
-        reject(new Error(`Failed to count ${storeName}`));
-      };
-    });
-  }
-
-  // ===== TAG MANAGEMENT METHODS =====
-
   /**
-   * Update tag analytics when bookmarks are saved
+   * Validate date string (accepts both ISO and Twitter formats)
    */
-  private async _updateTagAnalytics(tags: string[], tagsStore: IDBObjectStore): Promise<void> {
-    if (!tags || tags.length === 0) return;
-
-    const timestamp = new Date().toISOString();
-
-    for (const tagName of tags) {
-      if (!tagName.trim()) continue;
-
-      try {
-        // Get existing tag
-        const getRequest = tagsStore.get(tagName);
-        
-        await new Promise<void>((resolve, reject) => {
-          getRequest.onsuccess = () => {
-            const existingTag = getRequest.result;
-            
-            if (existingTag) {
-              // Update existing tag
-              existingTag.usageCount = (existingTag.usageCount || 0) + 1;
-              
-              const updateRequest = tagsStore.put(existingTag);
-              updateRequest.onsuccess = () => {
-                console.log(`📊 Updated tag analytics: ${tagName} (usage: ${existingTag.usageCount})`);
-                resolve();
-              };
-              updateRequest.onerror = () => reject(new Error(`Failed to update tag: ${tagName}`));
-              
-            } else {
-              // Create new tag
-              const newTag = {
-                name: tagName,
-                usageCount: 1,
-                createdAt: timestamp
-              };
-              
-              const addRequest = tagsStore.add(newTag);
-              addRequest.onsuccess = () => {
-                console.log(`🏷️ Created new tag: ${tagName}`);
-                resolve();
-              };
-              addRequest.onerror = () => reject(new Error(`Failed to create tag: ${tagName}`));
-            }
-          };
-          
-          getRequest.onerror = () => reject(new Error(`Failed to get tag: ${tagName}`));
-        });
-        
-      } catch (error) {
-        console.error(`❌ Failed to update tag analytics for: ${tagName}`, error);
-        // Continue with other tags even if one fails
-      }
-    }
+  private isValidDate(dateString: string): boolean {
+    if (!dateString || typeof dateString !== 'string') return false;
+    const date = new Date(dateString);
+    return !isNaN(date.getTime()) && date.getTime() > 0;
   }
 
   /**
-   * Get all tags with their usage statistics
+   * Clear all data (for testing/reset)
    */
-  async getAllTags(): Promise<DatabaseResult<TagEntity[]>> {
-    await this._ensureInitialized();
-
+  async clearAllData(): Promise<DatabaseResult<void>> {
     try {
-      const result = await this._withPerformanceTracking('getAllTags', async () => {
-        return new Promise<TagEntity[]>((resolve, reject) => {
-          const transaction = this._createTransaction(STORES.TAGS, 'readonly');
-          const store = transaction.objectStore(STORES.TAGS);
-          const request = store.getAll();
-
-          request.onsuccess = () => {
-            resolve(request.result || []);
-          };
-
-          request.onerror = () => {
-            reject(new Error('Failed to get all tags'));
-          };
-        });
-      });
-
-      return {
+      const { metrics } = await this.withPerformanceTracking(
+        'clearAllData',
+        async () => {
+          await this.transaction('rw', [this.bookmarks, this.tags, this.collections, this.settings], async () => {
+            await this.bookmarks.clear();
+            await this.tags.clear();
+            await this.collections.clear();
+            await this.settings.clear();
+          });
+          console.log('🧹 All data cleared');
+        }
+      );
+      
+      return { 
         success: true,
-        data: result.result,
-        metrics: result.metrics
+        metrics 
       };
-
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to get tags'
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to clear data'
       };
     }
   }
 
   /**
-   * Get popular tags (sorted by usage count)
+   * Clear all bookmarks only (keep other data)
    */
-  async getPopularTags(limit: number = 20): Promise<DatabaseResult<TagEntity[]>> {
-    const allTagsResult = await this.getAllTags();
-    
-    if (!allTagsResult.success) {
-      return allTagsResult;
-    }
-
+  async clearAllBookmarks(): Promise<DatabaseResult<void>> {
     try {
-      const popularTags = allTagsResult.data!
-        .sort((a, b) => (b.usageCount || 0) - (a.usageCount || 0))
-        .slice(0, limit);
-
-      return {
+      const { metrics } = await this.withPerformanceTracking(
+        'clearAllBookmarks',
+        async () => {
+          await this.bookmarks.clear();
+          console.log('🧹 All bookmarks cleared');
+        }
+      );
+      
+      return { 
         success: true,
-        data: popularTags
+        metrics 
       };
-
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to get popular tags'
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to clear bookmarks'
       };
     }
   }
 
   /**
-   * Search tags by name (for autocomplete)
-   */
-  async searchTags(query: string, limit: number = 10): Promise<DatabaseResult<TagEntity[]>> {
-    const allTagsResult = await this.getAllTags();
-    
-    if (!allTagsResult.success) {
-      return allTagsResult;
-    }
-
-    try {
-      const matchingTags = allTagsResult.data!
-        .filter(tag => tag.name.toLowerCase().includes(query.toLowerCase()))
-        .sort((a, b) => (b.usageCount || 0) - (a.usageCount || 0))
-        .slice(0, limit);
-
-      return {
-        success: true,
-        data: matchingTags
-      };
-
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to search tags'
-      };
-    }
-  }
-
-  /**
-   * Verify database is working by testing basic operations
+   * Verify database functionality (for debugging)
    */
   async verifyDatabase(): Promise<void> {
-    if (!this.isInitialized) {
-      await this.initialize();
-    }
-
     console.log('🧪 Testing database functionality...');
     
     // Test bookmark creation
@@ -828,7 +843,7 @@ export class XSavedDatabase {
       text: 'Test bookmark for verification',
       author: 'test_user',
       created_at: new Date().toISOString(),
-      bookmark_timestamp: new Date().toISOString(),
+      bookmarked_at: new Date().toISOString(),
       tags: ['test'],
       media_urls: [],
       textTokens: ['test', 'bookmark', 'verification']
@@ -850,7 +865,7 @@ export class XSavedDatabase {
         console.log('✅ Test bookmark retrieved successfully');
         
         // Clean up test bookmark
-        await this.deleteBookmark(testBookmark.id);
+        await this.bookmarks.delete(testBookmark.id);
         console.log('✅ Test bookmark cleaned up');
         console.log('🎉 Database verification completed successfully!');
       } else {
@@ -864,14 +879,19 @@ export class XSavedDatabase {
   /**
    * Close database connection
    */
-  close(): void {
-    if (this.db) {
-      this.db.close();
-      this.db = null;
+  async close(): Promise<void> {
+    try {
+      await super.close();
       this.isInitialized = false;
+      console.log('✅ Database closed successfully');
+    } catch (error) {
+      console.error('❌ Failed to close database:', error);
     }
   }
 }
 
-// Export singleton instance
-export const db = new XSavedDatabase(); 
+// Create and export database instance
+export const db = new XSavedDatabase();
+
+// Export types for convenience
+export type { BookmarkEntity, TagEntity, CollectionEntity, SettingsEntity };
