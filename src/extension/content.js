@@ -957,273 +957,20 @@ class XSavedContentScript {
       }
     }
 
-    // Create loading state
-    const loadingDiv = document.createElement('div');
-    loadingDiv.style.cssText = `
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 200px;
-      color: white;
-      font-size: 18px;
-    `;
-    loadingDiv.innerHTML = `
-      <div style="animation: spin 1s linear infinite; margin-bottom: 16px;">🔄</div>
-      Loading your bookmarks...
-    `;
-
-    gridOverlay.appendChild(loadingDiv);
     document.body.appendChild(gridOverlay);
+
+    // Render the static layout (navbar, search, tags)
+    this.renderLayout(gridOverlay);
 
     // Load bookmarks from service worker
     this.loadBookmarksGrid(gridOverlay);
   }
 
-  hideGridInterface() {
-    console.log('🔍 Hiding XSaved grid interface...');
-    const gridOverlay = document.getElementById('xsaved-grid-overlay');
-    if (gridOverlay) {
-      gridOverlay.remove();
-    }
-
-    // Remove the fixed header
-    const fixedHeader = document.getElementById('xsaved-fixed-header');
-    if (fixedHeader) {
-      fixedHeader.remove();
-    }
-
-    // Restore scrolling on the main page
-    document.body.style.overflow = '';
-    document.documentElement.style.overflow = '';
-
-    // Show X.com search input
-    const searchContainer = document.querySelector('div[data-xsaved-hidden="true"]');
-    if (searchContainer) {
-      searchContainer.style.display = '';
-      searchContainer.removeAttribute('data-xsaved-hidden');
-    }
-  }
-
   /**
-   * Get bookmark limit from configuration
-   * @returns {number} Bookmark limit
+   * Render the static layout (navbar, search, tags, sort buttons)
+   * This creates the UI shell that persists across data updates
    */
-  getBookmarkLimit() {
-    return DEFAULT_BOOKMARK_LIMIT;
-  }
-
-  /**
-   * Load initial bookmarks with pagination (OPTIMIZED)
-   * Loads only 50 bookmarks initially for fast rendering
-   */
-  async loadBookmarksGrid(container) {
-    console.log('📚 Loading bookmarks with pagination...');
-    
-    // Reset pagination state for fresh load
-    this.resetPagination();
-    
-    // Create initial query (use created_at for newest tweets)
-    const query = { 
-      text: '', 
-      limit: PAGINATION_CONFIG.INITIAL_LOAD, 
-      offset: 0,
-      sortBy: 'created_at',  // FIXED: Use created_at for newest tweets
-      sortOrder: 'desc' 
-    };
-    
-    // Store query for pagination
-    this.pagination.currentQuery = query;
-    
-    // Load first page
-    this.loadBookmarksPage(container, query, false); // false = not appending
-  }
-
-  /**
-   * Reset pagination state for new search/filter
-   */
-  resetPagination() {
-    this.pagination = {
-      currentOffset: 0,
-      hasMore: true,
-      isLoading: false,
-      currentQuery: null,
-      totalLoaded: 0
-    };
-    this.allBookmarks = [];
-  }
-
-  /**
-   * Load a page of bookmarks (initial or additional)
-   * @param {Element} container - Grid container
-   * @param {Object} query - Search query
-   * @param {boolean} append - Whether to append to existing results
-   */
-  loadBookmarksPage(container, query, append = true) {
-    if (this.pagination.isLoading) {
-      console.log('⏳ Already loading, skipping...');
-      return;
-    }
-    
-    this.pagination.isLoading = true;
-    
-    // Show loading indicator
-    if (append) {
-      this.showLoadingIndicator(container);
-    }
-    
-    safeRuntimeMessage({ 
-      action: 'searchBookmarks', 
-      query: query
-    }, (response) => {
-      this.pagination.isLoading = false;
-      
-      if (response?.success) {
-        let bookmarks = [];
-        
-        // Handle different response structures
-        if (response.result?.bookmarks) {
-          // Search engine result: { bookmarks: ScoredBookmark[] }
-          bookmarks = response.result.bookmarks.map(scoredBookmark => {
-            return scoredBookmark.bookmark || scoredBookmark;
-          });
-        } else if (response.result?.results) {
-          // Fallback result: { results: BookmarkEntity[] }
-          bookmarks = response.result.results;
-        } else {
-          console.warn('❌ Unexpected response structure:', response);
-          this.renderGridError(container, 'Unexpected data format');
-          return;
-        }
-        
-        // REMOVED: Client-side sorting - trust database sorting!
-        
-        // Update pagination state
-        this.pagination.currentOffset += bookmarks.length;
-        this.pagination.totalLoaded += bookmarks.length;
-        this.pagination.hasMore = bookmarks.length === query.limit; // If we got less than requested, no more pages
-        
-        // Clean: No debug logging
-        
-        if (append) {
-          // SIMPLE RE-RENDER APPROACH: Append to existing bookmarks and re-render entire grid for date grouping
-          this.allBookmarks = [...this.allBookmarks, ...bookmarks];
-          this.renderBookmarksGrid(container, this.allBookmarks);
-        } else {
-          // Replace existing bookmarks (initial load)
-          this.allBookmarks = bookmarks;
-          this.renderBookmarksGrid(container, bookmarks);
-          
-          // Initialize currentSort if not set
-          if (!this.currentSort) {
-            this.currentSort = { field: 'created_at', order: 'desc' };  // Default to created_at
-          }
-        }
-        
-        // Set up infinite scroll after first load
-        if (!append) {
-          this.setupInfiniteScroll(container);
-        }
-        
-      } else {
-        console.error('❌ Failed to load bookmarks:', response?.error);
-        this.renderGridError(container, response?.error || 'Failed to load bookmarks');
-      }
-      
-      // Hide loading indicator
-      this.hideLoadingIndicator(container);
-    });
-  }
-
-  // REMOVED: Simple append method - using re-render approach for consistent date grouping
-
-  /**
-   * Set up infinite scroll detection
-   */
-  setupInfiniteScroll(container) {
-    // Remove existing scroll listener to prevent duplicates
-    if (this.scrollListener) {
-      container.removeEventListener('scroll', this.scrollListener);
-    }
-    
-    // Create scroll listener
-    this.scrollListener = () => {
-      if (this.pagination.isLoading || !this.pagination.hasMore) {
-        return;
-      }
-      
-      const scrollTop = container.scrollTop;
-      const scrollHeight = container.scrollHeight;
-      const clientHeight = container.clientHeight;
-      
-      // Calculate scroll percentage
-      const scrollPercentage = (scrollTop + clientHeight) / scrollHeight;
-      
-      // Trigger load when reaching threshold (90% scrolled)
-      if (scrollPercentage >= PAGINATION_CONFIG.SCROLL_THRESHOLD) {
-        this.loadMoreBookmarks(container);
-      }
-    };
-    
-    // Add scroll listener
-    container.addEventListener('scroll', this.scrollListener);
-    // Clean: No debug logging
-  }
-
-  /**
-   * Load more bookmarks (next page)
-   */
-  loadMoreBookmarks(container) {
-    if (!this.pagination.currentQuery || !this.pagination.hasMore) {
-      return;
-    }
-    
-    // Create next page query
-    const nextQuery = {
-      ...this.pagination.currentQuery,
-      offset: this.pagination.currentOffset,
-      limit: PAGINATION_CONFIG.PAGE_SIZE
-    };
-    
-    // Clean: No debug logging
-    
-    // Load next page
-    this.loadBookmarksPage(container, nextQuery, true); // true = append
-  }
-
-  /**
-   * Show loading indicator at bottom of grid
-   */
-  showLoadingIndicator(container) {
-    // Remove existing indicator
-    this.hideLoadingIndicator(container);
-    
-    const loadingDiv = document.createElement('div');
-    loadingDiv.id = 'xsaved-loading-indicator';
-    loadingDiv.style.cssText = `
-      text-align: center;
-      padding: 20px;
-      color: #666;
-      font-size: 14px;
-    `;
-    loadingDiv.innerHTML = '⏳ Loading more bookmarks...';
-    
-    container.appendChild(loadingDiv);
-  }
-
-  /**
-   * Hide loading indicator
-   */
-  hideLoadingIndicator(container) {
-    const indicator = container.querySelector('#xsaved-loading-indicator');
-    if (indicator) {
-      indicator.remove();
-    }
-  }
-
-  renderBookmarksGrid(container, bookmarks) {
-    container.innerHTML = '';
-    
+  renderLayout(container) {
     // Store container reference for filtering
     this.currentGridContainer = container;
     
@@ -1232,106 +979,6 @@ class XSavedContentScript {
     if (existingHeader) {
       existingHeader.remove();
     }
-
-    // Helper function to group bookmarks by month/year
-    const groupBookmarksByDate = (bookmarks) => {
-      // Ensure currentSort has a default value
-      if (!this.currentSort) {
-        this.currentSort = { field: 'created_at', order: 'desc' };
-      }
-      
-      // Use the same date field that was used for sorting
-      const dateField = this.currentSort.field === 'bookmarked_at' ? 'bookmarked_at' : 'created_at';
-      
-      const grouped = bookmarks.reduce((acc, bookmark) => {
-        const date = new Date(bookmark[dateField] || bookmark.created_at);
-        const monthYear = `${date.getFullYear()}-${date.getMonth()}`;
-        
-        if (!acc[monthYear]) {
-          acc[monthYear] = {
-            date: new Date(date.getFullYear(), date.getMonth(), 1),
-            bookmarks: []
-          };
-        }
-        
-        acc[monthYear].bookmarks.push(bookmark);
-        return acc;
-      }, {});
-      
-      // Respect current sort order instead of hardcoding newest first
-      const sortDirection = this.currentSort.order === 'asc' ? 1 : -1;
-      return Object.values(grouped).sort((a, b) => 
-        sortDirection * (a.date.getTime() - b.date.getTime())
-      );
-    };
-
-    // Convert grouped bookmarks to grid items with separators
-    const createGridItems = (bookmarks) => {
-      const grouped = groupBookmarksByDate(bookmarks);
-      const items = [];
-      let dealIndex = 0;
-      
-      grouped.forEach((group, groupIndex) => {
-        // Add separator for each group
-        // Only show first separator if we have explicit sorting, otherwise skip first
-        const showFirstSeparator = this.currentSort && (this.currentSort.field !== 'created_at' || this.currentSort.order !== 'desc');
-        if (groupIndex > 0 || showFirstSeparator) {
-          items.push({
-            type: 'separator',
-            date: group.date
-          });
-        }
-        
-        // Add all bookmarks in this group
-        group.bookmarks.forEach(bookmark => {
-          items.push({
-            type: 'bookmark',
-            bookmark: bookmark,
-            dealIndex
-          });
-          dealIndex++;
-        });
-      });
-      
-      return items;
-    };
-
-    // Create date separator element (matching DateSeparator.tsx exactly)
-    const createDateSeparator = (date) => {
-      const separator = document.createElement('div');
-      separator.style.cssText = `
-        grid-column: 1 / -1;
-        display: flex;
-        align-items: center;
-        margin: 24px 0;
-        padding-left: 16px;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      `;
-
-      const dateText = document.createElement('span');
-      dateText.style.cssText = `
-        font-size: 14px;
-        font-weight: 500;
-        color: #9CA3AF;
-        white-space: nowrap;
-      `;
-      dateText.textContent = date.toLocaleDateString('en-US', { 
-        month: 'long', 
-        year: 'numeric' 
-      });
-
-      const line = document.createElement('div');
-      line.style.cssText = `
-        flex-grow: 1;
-        height: 1px;
-        margin-left: 16px;
-        background: linear-gradient(to right, #4B5563, transparent);
-      `;
-
-      separator.appendChild(dateText);
-      separator.appendChild(line);
-      return separator;
-    };
 
     // Create fixed header container (outside the overlay container)
     const headerContainer = document.createElement('div');
@@ -1482,7 +1129,7 @@ class XSavedContentScript {
 
     sortButton.addEventListener('click', () => {
       console.log('🔄 Sort button clicked');
-      this.showSortMenu(sortButton, bookmarks);
+      this.showSortMenu(sortButton, this.allBookmarks || []);
     });
 
     // Download button
@@ -1515,7 +1162,7 @@ class XSavedContentScript {
 
     downloadButton.addEventListener('click', () => {
       console.log('📤 Download button clicked');
-      this.showExportDialog(bookmarks);
+      this.showExportDialog(this.allBookmarks || []);
     });
 
     rightSide.appendChild(searchBox);
@@ -1536,7 +1183,7 @@ class XSavedContentScript {
       padding: 0 20px;
     `;
 
-    // Create grid
+    // Create grid container
     const grid = document.createElement('div');
     grid.className = 'grid';
     grid.id = 'xsaved-bookmarks-grid';
@@ -1549,27 +1196,363 @@ class XSavedContentScript {
       margin-bottom: 40px;
     `;
 
-    // Render grouped bookmark cards with date separators
-    const gridItems = createGridItems(bookmarks);
-    gridItems.forEach(item => {
-      if (item.type === 'separator') {
-        const separator = createDateSeparator(item.date);
-        grid.appendChild(separator);
-      } else {
-        const card = this.createBookmarkCard(item.bookmark);
-        grid.appendChild(card);
-      }
-    });
-
     container.appendChild(contentContainer);
     contentContainer.appendChild(grid);
 
-    // Add search functionality
+    // Add search functionality with debouncing
+    let searchTimeout;
     searchBox.addEventListener('input', (e) => {
-      this.filterBookmarksGrid(e.target.value, grid, bookmarks);
+      const query = e.target.value;
+      
+      // Clear previous timeout
+      if (searchTimeout) {
+        clearTimeout(searchTimeout);
+      }
+      
+      // Debounce search to avoid excessive calls
+      searchTimeout = setTimeout(() => {
+        this.filterBookmarksPage(query, container, this.allBookmarks || []);
+      }, 300); // 300ms delay
     });
 
-    console.log(`✅ Rendered grid with ${bookmarks.length} bookmarks`);
+    console.log('✅ Layout rendered');
+  }
+
+  /**
+   * Render the dynamic grid content (bookmark cards)
+   * This updates only the grid items without touching the layout
+   */
+  renderGrid(bookmarks) {
+    const gridEl = document.getElementById('xsaved-bookmarks-grid');
+    if (!gridEl) {
+      console.error('❌ Grid element not found');
+      return;
+    }
+
+    gridEl.innerHTML = '';
+
+    // Group bookmarks by date
+    const groups = this.groupBookmarksByDateSimple(bookmarks);
+    groups.forEach((group, index) => {
+      // Add separator between groups
+      if (index > 0) {
+        const sep = this.createDateSeparatorSimple(group.date);
+        gridEl.appendChild(sep);
+      }
+
+      // Append cards
+      group.bookmarks.forEach(b => {
+        const card = this.createBookmarkCard(b);
+        gridEl.appendChild(card);
+      });
+    });
+
+    console.log(`✅ Grid rendered with ${bookmarks.length} bookmarks`);
+  }
+
+  hideGridInterface() {
+    console.log('🔍 Hiding XSaved grid interface...');
+    const gridOverlay = document.getElementById('xsaved-grid-overlay');
+    if (gridOverlay) {
+      gridOverlay.remove();
+    }
+
+    // Remove the fixed header
+    const fixedHeader = document.getElementById('xsaved-fixed-header');
+    if (fixedHeader) {
+      fixedHeader.remove();
+    }
+
+    // Restore scrolling on the main page
+    document.body.style.overflow = '';
+    document.documentElement.style.overflow = '';
+
+    // Show X.com search input
+    const searchContainer = document.querySelector('div[data-xsaved-hidden="true"]');
+    if (searchContainer) {
+      searchContainer.style.display = '';
+      searchContainer.removeAttribute('data-xsaved-hidden');
+    }
+  }
+
+  /**
+   * Get bookmark limit from configuration
+   * @returns {number} Bookmark limit
+   */
+  getBookmarkLimit() {
+    return DEFAULT_BOOKMARK_LIMIT;
+  }
+
+  /**
+   * Load initial bookmarks with pagination (OPTIMIZED)
+   * Loads only 50 bookmarks initially for fast rendering
+   */
+  async loadBookmarksGrid(container) {
+    console.log('📚 Loading bookmarks with pagination...');
+    
+    // Reset pagination state for fresh load
+    this.resetPagination();
+    
+    // Create initial query (use created_at for newest tweets)
+    const query = { 
+      text: '', 
+      limit: PAGINATION_CONFIG.INITIAL_LOAD, 
+      offset: 0,
+      sortBy: 'created_at',  // FIXED: Use created_at for newest tweets
+      sortOrder: 'desc' 
+    };
+    
+    // Store query for pagination
+    this.pagination.currentQuery = query;
+    
+    // Load first page
+    this.loadBookmarksPage(container, query, false); // false = not appending
+  }
+
+  /**
+   * Reset pagination state for new search/filter
+   */
+  resetPagination() {
+    this.pagination = {
+      currentOffset: 0,
+      hasMore: true,
+      isLoading: false,
+      currentQuery: null,
+      totalLoaded: 0
+    };
+    this.allBookmarks = [];
+  }
+
+  /**
+   * Load a page of bookmarks (initial or additional)
+   * @param {Element} container - Grid container
+   * @param {Object} query - Search query
+   * @param {boolean} append - Whether to append to existing results
+   */
+  loadBookmarksPage(container, query, append = true) {
+    if (this.pagination.isLoading) {
+      console.log('⏳ Already loading, skipping...');
+      return;
+    }
+    
+    this.pagination.isLoading = true;
+    
+    // Show loading indicator
+    if (append) {
+      this.showLoadingIndicator(container);
+    }
+    
+    safeRuntimeMessage({ 
+      action: 'searchBookmarks', 
+      query: query
+    }, (response) => {
+      this.pagination.isLoading = false;
+      
+      if (response?.success) {
+        let bookmarks = [];
+        
+        // Handle different response structures
+        if (response.result?.bookmarks) {
+          // Search engine result: { bookmarks: ScoredBookmark[] }
+          bookmarks = response.result.bookmarks.map(scoredBookmark => {
+            return scoredBookmark.bookmark || scoredBookmark;
+          });
+        } else if (response.result?.results) {
+          // Fallback result: { results: BookmarkEntity[] }
+          bookmarks = response.result.results;
+        } else {
+          console.warn('❌ Unexpected response structure:', response);
+          this.renderGridError(container, 'Unexpected data format');
+          return;
+        }
+        
+        // REMOVED: Client-side sorting - trust database sorting!
+        
+        // Update pagination state
+        this.pagination.currentOffset += bookmarks.length;
+        this.pagination.totalLoaded += bookmarks.length;
+        this.pagination.hasMore = bookmarks.length === query.limit; // If we got less than requested, no more pages
+        
+        // Clean: No debug logging
+        
+        if (append) {
+          // Grid-only update: append and re-render items (keep header intact)
+          this.allBookmarks = [...this.allBookmarks, ...bookmarks];
+          this.renderGrid(this.allBookmarks);
+        } else {
+          // Replace dataset and render
+          this.allBookmarks = bookmarks;
+          this.renderGrid(bookmarks);
+          
+          // Initialize currentSort if not set
+          if (!this.currentSort) {
+            this.currentSort = { field: 'created_at', order: 'desc' };
+          }
+        }
+        
+        // Set up infinite scroll after first load
+        if (!append) {
+          this.setupInfiniteScroll(container);
+        }
+        
+      } else {
+        console.error('❌ Failed to load bookmarks:', response?.error);
+        this.renderGridError(container, response?.error || 'Failed to load bookmarks');
+      }
+      
+      // Hide loading indicator
+      this.hideLoadingIndicator(container);
+    });
+  }
+
+  // REMOVED: Simple append method - using re-render approach for consistent date grouping
+
+  /**
+   * Set up infinite scroll detection
+   */
+  setupInfiniteScroll(container) {
+    // Remove existing scroll listener to prevent duplicates
+    if (this.scrollListener) {
+      container.removeEventListener('scroll', this.scrollListener);
+    }
+    
+    // Create scroll listener
+    this.scrollListener = () => {
+      if (this.pagination.isLoading || !this.pagination.hasMore) {
+        return;
+      }
+      
+      const scrollTop = container.scrollTop;
+      const scrollHeight = container.scrollHeight;
+      const clientHeight = container.clientHeight;
+      
+      // Calculate scroll percentage
+      const scrollPercentage = (scrollTop + clientHeight) / scrollHeight;
+      
+      // Trigger load when reaching threshold (90% scrolled)
+      if (scrollPercentage >= PAGINATION_CONFIG.SCROLL_THRESHOLD) {
+        this.loadMoreBookmarks(container);
+      }
+    };
+    
+    // Add scroll listener
+    container.addEventListener('scroll', this.scrollListener);
+    // Clean: No debug logging
+  }
+
+  /**
+   * Load more bookmarks (next page)
+   */
+  loadMoreBookmarks(container) {
+    if (!this.pagination.currentQuery || !this.pagination.hasMore) {
+      return;
+    }
+    
+    // Create next page query
+    const nextQuery = {
+      ...this.pagination.currentQuery,
+      offset: this.pagination.currentOffset,
+      limit: PAGINATION_CONFIG.PAGE_SIZE
+    };
+    
+    // Clean: No debug logging
+    
+    // Load next page
+    this.loadBookmarksPage(container, nextQuery, true); // true = append
+  }
+
+  /**
+   * Show loading indicator at bottom of grid
+   */
+  showLoadingIndicator(container) {
+    // Remove existing indicator
+    this.hideLoadingIndicator(container);
+    
+    const loadingDiv = document.createElement('div');
+    loadingDiv.id = 'xsaved-loading-indicator';
+    loadingDiv.style.cssText = `
+      text-align: center;
+      padding: 20px;
+      color: #666;
+      font-size: 14px;
+    `;
+    loadingDiv.innerHTML = '⏳ Loading more bookmarks...';
+    
+    container.appendChild(loadingDiv);
+  }
+
+  /**
+   * Hide loading indicator
+   */
+  hideLoadingIndicator(container) {
+    const indicator = container.querySelector('#xsaved-loading-indicator');
+    if (indicator) {
+      indicator.remove();
+    }
+  }
+
+
+
+  /**
+   * Group bookmarks by month/year using created_at and current sort
+   */
+  groupBookmarksByDateSimple(bookmarks) {
+    // Ensure sort defaults
+    if (!this.currentSort) {
+      this.currentSort = { field: 'created_at', order: 'desc' };
+    }
+
+    const grouped = bookmarks.reduce((acc, bookmark) => {
+      const date = new Date(bookmark.created_at);
+      const key = `${date.getFullYear()}-${date.getMonth()}`;
+      if (!acc[key]) {
+        acc[key] = {
+          date: new Date(date.getFullYear(), date.getMonth(), 1),
+          bookmarks: []
+        };
+      }
+      acc[key].bookmarks.push(bookmark);
+      return acc;
+    }, {});
+
+    const dir = this.currentSort.order === 'asc' ? 1 : -1;
+    return Object.values(grouped).sort((a, b) => dir * (a.date.getTime() - b.date.getTime()));
+  }
+
+  /**
+   * Create a simple date separator element
+   */
+  createDateSeparatorSimple(date) {
+    const separator = document.createElement('div');
+    separator.style.cssText = `
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      margin: 24px 0;
+      padding-left: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    `;
+
+    const dateText = document.createElement('span');
+    dateText.style.cssText = `
+      font-size: 14px;
+      font-weight: 500;
+      color: #9CA3AF;
+      white-space: nowrap;
+    `;
+    dateText.textContent = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+    const line = document.createElement('div');
+    line.style.cssText = `
+      flex-grow: 1;
+      height: 1px;
+      margin-left: 16px;
+      background: linear-gradient(to right, #4B5563, transparent);
+    `;
+
+    separator.appendChild(dateText);
+    separator.appendChild(line);
+    return separator;
   }
 
   /**
@@ -2528,10 +2511,10 @@ class XSavedContentScript {
 
   /**
    * Filter bookmarks using database search with pagination (OPTIMIZED)
-   * REMOVED: Client-side filtering - now uses database search
+   * FIXED: No longer destroys search input by using renderGrid instead of full rebuild
    */
-  filterBookmarksGrid(query, grid, bookmarks) {
-    console.log(`🔍 Searching with pagination: "${query}"`);
+  filterBookmarksPage(query, container, bookmarks) {
+    console.log(`🔍 Search input: "${query}"`);
     
     // Create search query with current sorting
     const searchQuery = {
@@ -2542,13 +2525,17 @@ class XSavedContentScript {
       sortOrder: this.currentSort?.order || 'desc'
     };
     
+    console.log(`🔍 Search query:`, searchQuery);
+    
     // Reset pagination and search
     this.resetPagination();
     this.pagination.currentQuery = searchQuery;
     
-    // Load search results with pagination
-    this.loadBookmarksPage(grid, searchQuery, false); // false = replace, not append
-    return; // Exit early - no need for client-side filtering
+    // Load search results with pagination - use append=false to replace results
+    this.loadBookmarksPage(container, searchQuery, false);
+    
+    // No setTimeout needed - search input stays intact since we don't rebuild the entire DOM
+    return;
     
     // OLD CODE BELOW - keeping for reference but not executed
     const filteredBookmarks = [];
