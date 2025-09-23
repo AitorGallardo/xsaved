@@ -36,6 +36,8 @@ export class SearchExecutor {
     };
 
     try {
+      console.log(`🔍 SearchExecutor.executeSearch called with:`, parsedQuery);
+      
       // Ensure database is ready
       await db.initialize();
 
@@ -56,6 +58,7 @@ export class SearchExecutor {
           offset: parsedQuery.offset  // CRITICAL FIX: Pass the offset for pagination!
         });
         candidateBookmarks = recentResult.data || [];
+        console.log(`🔍 Retrieved ${candidateBookmarks.length} candidate bookmarks from database`);
         analytics.indexesUsed.push(sortBy);
       }
 
@@ -75,11 +78,13 @@ export class SearchExecutor {
 
       // Apply text search if present
       if (parsedQuery.textTokens.length > 0) {
+        console.log(`🔍 Applying text search with tokens:`, parsedQuery.textTokens);
         candidateBookmarks = await this.applyTextSearch(
           candidateBookmarks,
           parsedQuery.textTokens,
           analytics
         );
+        console.log(`🔍 After text search: ${candidateBookmarks.length} bookmarks remaining`);
       }
 
       // Filter out excluded tags
@@ -322,9 +327,10 @@ export class SearchExecutor {
   private async searchByTextToken(token: string): Promise<BookmarkEntity[]> {
     try {
       // Use native Dexie multi-entry query - leverages textTokens index!
+      // FIXED: Use anyOfIgnoreCase for proper multi-entry index query
       const results = await db.bookmarks
         .where('textTokens')
-        .equals(token.toLowerCase())
+        .anyOfIgnoreCase([token])
         .reverse()
         .limit(2000)
         .toArray();
@@ -374,13 +380,19 @@ export class SearchExecutor {
     const startTime = performance.now();
 
     const filtered = bookmarks.filter(bookmark => {
-      // Check if bookmark contains any of the search tokens
-      const bookmarkTokens = bookmark.textTokens;
+      const bookmarkTokens = bookmark.textTokens || [];
       const bookmarkText = bookmark.text.toLowerCase();
       
-      return tokens.some(token => 
-        bookmarkTokens.includes(token) || 
-        bookmarkText.includes(token)
+      // IMPROVED: Check if ALL tokens are present (AND logic for better precision)
+      // For single token searches, use exact matching
+      if (tokens.length === 1) {
+        const token = tokens[0];
+        return bookmarkTokens.includes(token) || bookmarkText.includes(token);
+      }
+      
+      // For multiple tokens, require ALL tokens to be present (AND logic)
+      return tokens.every(token => 
+        bookmarkTokens.includes(token) || bookmarkText.includes(token)
       );
     });
 
@@ -389,6 +401,7 @@ export class SearchExecutor {
       analytics.slowOperations.push(`Text search: ${duration.toFixed(2)}ms`);
     }
 
+    console.log(`🔍 Text search: ${tokens.length} tokens, ${filtered.length} results from ${bookmarks.length} bookmarks`);
     return filtered;
   }
 

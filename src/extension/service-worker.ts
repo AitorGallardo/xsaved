@@ -104,7 +104,7 @@ class ExtensionServiceWorker {
       console.log('🔍 Initializing Search Engine...');
       try {
         this.searchEngine = searchEngine;
-        console.log('✅ Search Engine initialized successfully');
+        console.log('✅ Search Engine initialized successfully:', !!this.searchEngine);
       } catch (error) {
         console.error('❌ Failed to initialize Search Engine:', error);
         this.searchEngine = null;
@@ -525,10 +525,15 @@ const handleStartExtraction = async (sendResponse, options = {}) => {
 
 const handleSearchBookmarks = async (query, sendResponse) => {
   try {
+    console.log(`🔍 Service Worker search request:`, query);
     await serviceWorker.initialize();
     
+    console.log(`🔍 Search engine available:`, !!serviceWorker.searchEngine);
+    
     if (serviceWorker.searchEngine) {
+      console.log(`🔍 Using search engine for query:`, query);
       const result = await serviceWorker.searchEngine.search(query);
+      console.log(`🔍 Search result:`, result);
       sendResponse({ success: true, result });
     } else {
       // Fallback to chrome.storage.local search for testing
@@ -548,6 +553,7 @@ const handleSearchBookmarks = async (query, sendResponse) => {
         })
         .slice(0, query.limit || 50);
       
+      console.log(`🔍 Fallback search found ${bookmarks.length} bookmarks`);
       sendResponse({ success: true, result: { results: bookmarks, totalFound: bookmarks.length } });
     }
   } catch (error) {

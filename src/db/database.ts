@@ -354,6 +354,8 @@ export class XSavedDatabase extends Dexie {
     offset?: number;  // NEW: Pagination support
   } = {}): Promise<BookmarkEntity[]> {
     try {
+      console.log(`🔍 getAllBookmarks called with options:`, options);
+      
       // OPTION A: Ultra-simple Dexie pagination (works because dates are normalized when saving)
       let query = this.bookmarks.orderBy(options.sortBy || 'created_at');
       
@@ -374,6 +376,7 @@ export class XSavedDatabase extends Dexie {
       }
       
       const bookmarks = await query.toArray();
+      console.log(`🔍 getAllBookmarks found ${bookmarks.length} bookmarks in database`);
       
       // Clean: No console logging
       
@@ -556,7 +559,9 @@ export class XSavedDatabase extends Dexie {
     offset?: number;  // CRITICAL FIX: Add offset support for pagination
   } = {}): Promise<DatabaseResult<BookmarkEntity[]>> {
     try {
-      const { result, metrics } = await this.withPerformanceTracking(
+      console.log(`🔍 getRecentBookmarks called with options:`, options);
+      
+        const { result, metrics } = await this.withPerformanceTracking(
         'getRecentBookmarks',
         () => this.getAllBookmarks({
           sortBy: options.sortBy || 'created_at',
@@ -566,12 +571,15 @@ export class XSavedDatabase extends Dexie {
         })
       );
       
+      console.log(`🔍 getRecentBookmarks returning ${result?.length || 0} bookmarks`);
+      
       return { 
         success: true, 
         data: result,
         metrics 
       };
     } catch (error) {
+      console.error(`🔍 getRecentBookmarks error:`, error);
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to get recent bookmarks'

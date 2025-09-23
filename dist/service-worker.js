@@ -366,6 +366,7 @@ class XSavedDatabase extends import_wrapper_prod {
      */
     async getAllBookmarks(options = {}) {
         try {
+            console.log(`🔍 getAllBookmarks called with options:`, options);
             // OPTION A: Ultra-simple Dexie pagination (works because dates are normalized when saving)
             let query = this.bookmarks.orderBy(options.sortBy || 'created_at');
             // Apply sort order
@@ -383,6 +384,7 @@ class XSavedDatabase extends import_wrapper_prod {
                 query = query.limit(options.limit);
             }
             const bookmarks = await query.toArray();
+            console.log(`🔍 getAllBookmarks found ${bookmarks.length} bookmarks in database`);
             // Clean: No console logging
             return bookmarks;
         }
@@ -543,12 +545,14 @@ class XSavedDatabase extends import_wrapper_prod {
      */
     async getRecentBookmarks(options = {}) {
         try {
+            console.log(`🔍 getRecentBookmarks called with options:`, options);
             const { result, metrics } = await this.withPerformanceTracking('getRecentBookmarks', () => this.getAllBookmarks({
                 sortBy: options.sortBy || 'created_at',
                 sortOrder: 'desc',
                 limit: options.limit || 50,
                 offset: options.offset // CRITICAL FIX: Pass offset to getAllBookmarks
             }));
+            console.log(`🔍 getRecentBookmarks returning ${result?.length || 0} bookmarks`);
             return {
                 success: true,
                 data: result,
@@ -556,6 +560,7 @@ class XSavedDatabase extends import_wrapper_prod {
             };
         }
         catch (error) {
+            console.error(`🔍 getRecentBookmarks error:`, error);
             return {
                 success: false,
                 error: error instanceof Error ? error.message : 'Failed to get recent bookmarks'
@@ -1027,6 +1032,7 @@ class QueryParser {
      * Parse user search query into optimized execution plan
      */
     parseQuery(query) {
+        console.log(`🔍 QueryParser.parseQuery called with:`, query);
         const parsed = {
             textTokens: [],
             exactPhrases: [],
@@ -1050,6 +1056,7 @@ class QueryParser {
         // Parse text input
         if (query.text) {
             this.parseTextQuery(query.text, parsed);
+            console.log(`🔍 Parsed text tokens:`, parsed.textTokens);
         }
         // Build filters
         this.buildFilters(query, parsed);
@@ -1095,7 +1102,7 @@ class QueryParser {
     tokenizeText(text) {
         return text
             .toLowerCase()
-            .replace(/[^\w\s]/g, ' ') // Remove punctuation except underscores
+            .replace(/[^\w\s#@]/g, ' ') // FIXED: Keep hashtags and mentions like database
             .split(/\s+/)
             .filter(token => token.length >= this.textConfig.minTokenLength)
             .slice(0, this.textConfig.maxTokens) // Limit token count
@@ -1313,6 +1320,7 @@ class SearchExecutor {
             indexesUsed: []
         };
         try {
+            console.log(`🔍 SearchExecutor.executeSearch called with:`, parsedQuery);
             // Ensure database is ready
             await db.initialize();
             // Execute primary filter first (most selective)
@@ -1329,6 +1337,7 @@ class SearchExecutor {
                     offset: parsedQuery.offset // CRITICAL FIX: Pass the offset for pagination!
                 });
                 candidateBookmarks = recentResult.data || [];
+                console.log(`🔍 Retrieved ${candidateBookmarks.length} candidate bookmarks from database`);
                 analytics.indexesUsed.push(sortBy);
             }
             // Apply secondary filters
@@ -1341,7 +1350,9 @@ class SearchExecutor {
             }
             // Apply text search if present
             if (parsedQuery.textTokens.length > 0) {
+                console.log(`🔍 Applying text search with tokens:`, parsedQuery.textTokens);
                 candidateBookmarks = await this.applyTextSearch(candidateBookmarks, parsedQuery.textTokens, analytics);
+                console.log(`🔍 After text search: ${candidateBookmarks.length} bookmarks remaining`);
             }
             // Filter out excluded tags
             if (parsedQuery.excludedTags.length > 0) {
@@ -1534,9 +1545,10 @@ class SearchExecutor {
     async searchByTextToken(token) {
         try {
             // Use native Dexie multi-entry query - leverages textTokens index!
+            // FIXED: Use anyOfIgnoreCase for proper multi-entry index query
             const results = await db.bookmarks
                 .where('textTokens')
-                .equals(token.toLowerCase())
+                .anyOfIgnoreCase([token])
                 .reverse()
                 .limit(2000)
                 .toArray();
@@ -1577,16 +1589,22 @@ class SearchExecutor {
             return bookmarks;
         const startTime = performance.now();
         const filtered = bookmarks.filter(bookmark => {
-            // Check if bookmark contains any of the search tokens
-            const bookmarkTokens = bookmark.textTokens;
+            const bookmarkTokens = bookmark.textTokens || [];
             const bookmarkText = bookmark.text.toLowerCase();
-            return tokens.some(token => bookmarkTokens.includes(token) ||
-                bookmarkText.includes(token));
+            // IMPROVED: Check if ALL tokens are present (AND logic for better precision)
+            // For single token searches, use exact matching
+            if (tokens.length === 1) {
+                const token = tokens[0];
+                return bookmarkTokens.includes(token) || bookmarkText.includes(token);
+            }
+            // For multiple tokens, require ALL tokens to be present (AND logic)
+            return tokens.every(token => bookmarkTokens.includes(token) || bookmarkText.includes(token));
         });
         const duration = performance.now() - startTime;
         if (duration > this.config.performanceTargets.textSearch) {
             analytics.slowOperations.push(`Text search: ${duration.toFixed(2)}ms`);
         }
+        console.log(`🔍 Text search: ${tokens.length} tokens, ${filtered.length} results from ${bookmarks.length} bookmarks`);
         return filtered;
     }
     /**
@@ -1686,6 +1704,7 @@ class SearchEngine {
     async search(query) {
         const startTime = performance.now();
         try {
+            console.log(`🔍 SearchEngine.search called with:`, query);
             // Generate cache key
             const cacheKey = this.queryParser.generateQueryHash(query);
             // Check cache first (but skip for pagination to avoid stale results)
@@ -1698,8 +1717,10 @@ class SearchEngine {
             }
             // Parse query into optimized execution plan
             const parsedQuery = this.queryParser.parseQuery(query);
+            console.log(`🔍 Parsed query:`, parsedQuery);
             // Execute search
             const result = await this.searchExecutor.executeSearch(parsedQuery);
+            console.log(`🔍 SearchEngine result:`, result);
             // Add suggested queries
             result.suggestedQueries = this.queryParser.extractSuggestions(query);
             // Cache result if enabled (skip for pagination)
@@ -1814,7 +1835,7 @@ class SearchEngine {
                 enableFuzzyMatching: false, // Start simple
                 enableStemming: false,
                 enableSynonyms: false,
-                minTokenLength: 3,
+                minTokenLength: 2, // FIXED: Allow 2+ character tokens to match database
                 maxTokens: 10,
                 proximityBoost: false
             },
@@ -3093,7 +3114,7 @@ class ExtensionServiceWorker {
             console.log('🔍 Initializing Search Engine...');
             try {
                 this.searchEngine = searchEngine;
-                console.log('✅ Search Engine initialized successfully');
+                console.log('✅ Search Engine initialized successfully:', !!this.searchEngine);
             }
             catch (error) {
                 console.error('❌ Failed to initialize Search Engine:', error);
@@ -3453,9 +3474,13 @@ const handleStartExtraction = async (sendResponse, options = {}) => {
 };
 const handleSearchBookmarks = async (query, sendResponse) => {
     try {
+        console.log(`🔍 Service Worker search request:`, query);
         await serviceWorker.initialize();
+        console.log(`🔍 Search engine available:`, !!serviceWorker.searchEngine);
         if (serviceWorker.searchEngine) {
+            console.log(`🔍 Using search engine for query:`, query);
             const result = await serviceWorker.searchEngine.search(query);
+            console.log(`🔍 Search result:`, result);
             sendResponse({ success: true, result });
         }
         else {
@@ -3475,6 +3500,7 @@ const handleSearchBookmarks = async (query, sendResponse) => {
                 return true;
             })
                 .slice(0, query.limit || 50);
+            console.log(`🔍 Fallback search found ${bookmarks.length} bookmarks`);
             sendResponse({ success: true, result: { results: bookmarks, totalFound: bookmarks.length } });
         }
     }

@@ -22,6 +22,8 @@ export class QueryParser {
    * Parse user search query into optimized execution plan
    */
   parseQuery(query: SearchQuery): ParsedQuery {
+    console.log(`🔍 QueryParser.parseQuery called with:`, query);
+    
     const parsed: ParsedQuery = {
       textTokens: [],
       exactPhrases: [],
@@ -46,6 +48,7 @@ export class QueryParser {
     // Parse text input
     if (query.text) {
       this.parseTextQuery(query.text, parsed);
+      console.log(`🔍 Parsed text tokens:`, parsed.textTokens);
     }
 
     // Build filters
@@ -104,7 +107,7 @@ export class QueryParser {
   private tokenizeText(text: string): string[] {
     return text
       .toLowerCase()
-      .replace(/[^\w\s]/g, ' ')  // Remove punctuation except underscores
+      .replace(/[^\w\s#@]/g, ' ')  // FIXED: Keep hashtags and mentions like database
       .split(/\s+/)
       .filter(token => token.length >= this.textConfig.minTokenLength)
       .slice(0, this.textConfig.maxTokens)  // Limit token count

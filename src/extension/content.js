@@ -1203,6 +1203,7 @@ class XSavedContentScript {
     let searchTimeout;
     searchBox.addEventListener('input', (e) => {
       const query = e.target.value;
+      console.log(`🔍 Search input event fired: "${query}"`);
       
       // Clear previous timeout
       if (searchTimeout) {
@@ -1211,6 +1212,7 @@ class XSavedContentScript {
       
       // Debounce search to avoid excessive calls
       searchTimeout = setTimeout(() => {
+        console.log(`🔍 Debounced search triggered for: "${query}"`);
         this.filterBookmarksPage(query, container, this.allBookmarks || []);
       }, 300); // 300ms delay
     });
@@ -1342,10 +1344,13 @@ class XSavedContentScript {
       this.showLoadingIndicator(container);
     }
     
+    console.log(`🔍 loadBookmarksPage: Sending search request:`, query);
+    
     safeRuntimeMessage({ 
       action: 'searchBookmarks', 
       query: query
     }, (response) => {
+      console.log(`🔍 loadBookmarksPage: Received response:`, response);
       this.pagination.isLoading = false;
       
       if (response?.success) {

@@ -33,6 +33,8 @@ export class SearchEngine {
     const startTime = performance.now();
 
     try {
+      console.log(`🔍 SearchEngine.search called with:`, query);
+      
       // Generate cache key
       const cacheKey = this.queryParser.generateQueryHash(query);
       
@@ -47,9 +49,11 @@ export class SearchEngine {
 
       // Parse query into optimized execution plan
       const parsedQuery = this.queryParser.parseQuery(query);
+      console.log(`🔍 Parsed query:`, parsedQuery);
 
       // Execute search
       const result = await this.searchExecutor.executeSearch(parsedQuery);
+      console.log(`🔍 SearchEngine result:`, result);
 
       // Add suggested queries
       result.suggestedQueries = this.queryParser.extractSuggestions(query);
@@ -181,7 +185,7 @@ export class SearchEngine {
         enableFuzzyMatching: false,  // Start simple
         enableStemming: false,
         enableSynonyms: false,
-        minTokenLength: 3,
+        minTokenLength: 2,  // FIXED: Allow 2+ character tokens to match database
         maxTokens: 10,
         proximityBoost: false
       },
