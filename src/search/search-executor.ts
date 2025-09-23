@@ -78,13 +78,16 @@ export class SearchExecutor {
 
       // Apply text search if present
       if (parsedQuery.textTokens.length > 0) {
-        console.log(`🔍 Applying text search with tokens:`, parsedQuery.textTokens);
-        candidateBookmarks = await this.applyTextSearch(
-          candidateBookmarks,
-          parsedQuery.textTokens,
-          analytics
-        );
-        console.log(`🔍 After text search: ${candidateBookmarks.length} bookmarks remaining`);
+        console.log(`🔍 Applying substring text search with tokens:`, parsedQuery.textTokens);
+        
+        if (candidateBookmarks.length === 0) {
+          // No candidates from primary filter, do substring search directly
+          candidateBookmarks = await this.searchBySubstring(parsedQuery.textTokens, analytics);
+        } else {
+          // Apply substring filtering to existing candidates
+          candidateBookmarks = await this.applySubstringFilter(candidateBookmarks, parsedQuery.textTokens, analytics);
+        }
+        console.log(`🔍 After substring text search: ${candidateBookmarks.length} bookmarks remaining`);
       }
 
       // Filter out excluded tags
@@ -326,8 +329,7 @@ export class SearchExecutor {
    */
   private async searchByTextToken(token: string): Promise<BookmarkEntity[]> {
     try {
-      // Use native Dexie multi-entry query - leverages textTokens index!
-      // FIXED: Use anyOfIgnoreCase for proper multi-entry index query
+      // FIXED: Use proper multi-entry index query for fast exact token matching
       const results = await db.bookmarks
         .where('textTokens')
         .anyOfIgnoreCase([token])
@@ -335,10 +337,133 @@ export class SearchExecutor {
         .limit(2000)
         .toArray();
       
-      console.log(`🔍 Found ${results.length} bookmarks containing token "${token}"`);
+      console.log(`🔍 Found ${results.length} bookmarks with exact token "${token}"`);
       return results;
     } catch (error) {
       console.error(`❌ Text token search failed for "${token}":`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Search by substring matching (replicates client-side filter logic)
+   */
+  private async searchBySubstring(tokens: string[], analytics: SearchAnalytics): Promise<BookmarkEntity[]> {
+    try {
+      // Get all bookmarks for substring search
+      const allBookmarks = await db.bookmarks
+        .orderBy('created_at')
+        .reverse()
+        .limit(5000) // Reasonable limit for substring search
+        .toArray();
+      
+      console.log(`🔍 Searching ${allBookmarks.length} bookmarks with substring logic`);
+      
+      // Apply substring filtering with AND logic for multiple tokens
+      const results = allBookmarks.filter(bookmark => {
+        const text = bookmark?.text || '';
+        const author = bookmark?.author || '';
+        const tags = bookmark?.tags || [];
+        
+        // For multiple tokens, ALL tokens must match (AND logic)
+        return tokens.every(token => {
+          const lowerToken = token.toLowerCase();
+          return text.toLowerCase().includes(lowerToken) ||
+                 author.toLowerCase().includes(lowerToken) ||
+                 tags.some(tag => tag.toLowerCase().includes(lowerToken));
+        });
+      });
+      
+      console.log(`🔍 Substring search found ${results.length} matches`);
+      return results;
+    } catch (error) {
+      console.error(`❌ Substring search failed:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Apply substring filtering to existing candidate bookmarks
+   */
+  private async applySubstringFilter(
+    bookmarks: BookmarkEntity[],
+    tokens: string[],
+    analytics: SearchAnalytics
+  ): Promise<BookmarkEntity[]> {
+    if (tokens.length === 0) return bookmarks;
+
+    const startTime = performance.now();
+
+    const filtered = bookmarks.filter(bookmark => {
+      const text = bookmark?.text || '';
+      const author = bookmark?.author || '';
+      const tags = bookmark?.tags || [];
+      
+      // For multiple tokens, ALL tokens must match (AND logic)
+      return tokens.every(token => {
+        const lowerToken = token.toLowerCase();
+        return text.toLowerCase().includes(lowerToken) ||
+               author.toLowerCase().includes(lowerToken) ||
+               tags.some(tag => tag.toLowerCase().includes(lowerToken));
+      });
+    });
+
+    const duration = performance.now() - startTime;
+    if (duration > this.config.performanceTargets.textSearch) {
+      analytics.slowOperations.push(`Substring filter: ${duration.toFixed(2)}ms`);
+    }
+
+    console.log(`🔍 Substring filter: ${tokens.length} tokens, ${filtered.length} results from ${bookmarks.length} bookmarks`);
+    return filtered;
+  }
+
+  /**
+   * Search using Dexie's multi-column filtering (like SQL WHERE with OR conditions)
+   * ALTERNATIVE APPROACH: Uses Dexie's native filtering instead of substring search
+   */
+  private async searchByMultiColumn(tokens: string[], analytics: SearchAnalytics): Promise<BookmarkEntity[]> {
+    try {
+      console.log(`🔍 Dexie multi-column search with tokens:`, tokens);
+      
+      // Use Dexie's filter method to search across multiple columns
+      // This is similar to SQL: WHERE text LIKE '%token%' OR author LIKE '%token%' OR tags CONTAINS 'token'
+      const results = await db.bookmarks
+        .orderBy('created_at')
+        .reverse()
+        .filter(bookmark => {
+          // For multiple tokens, ALL tokens must match somewhere (AND logic across tokens)
+          return tokens.every(token => {
+            const lowerToken = token.toLowerCase();
+            
+            // Check text field
+            if (bookmark.text && bookmark.text.toLowerCase().includes(lowerToken)) {
+              return true;
+            }
+            
+            // Check author field
+            if (bookmark.author && bookmark.author.toLowerCase().includes(lowerToken)) {
+              return true;
+            }
+            
+            // Check tags array
+            if (bookmark.tags && Array.isArray(bookmark.tags)) {
+              if (bookmark.tags.some(tag => 
+                typeof tag === 'string' && tag.toLowerCase().includes(lowerToken)
+              )) {
+                return true;
+              }
+            }
+            
+            return false;
+          });
+        })
+        .limit(5000) // Reasonable limit
+        .toArray();
+      
+      console.log(`🔍 Dexie multi-column search found ${results.length} matches`);
+      return results;
+    } catch (error) {
+      console.error(`❌ Dexie multi-column search failed:`, error);
       return [];
     }
   }

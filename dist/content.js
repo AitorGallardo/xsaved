@@ -1562,48 +1562,34 @@ class XSavedContentScript {
   }
 
   /**
-   * Filter bookmarks by selected tags and update the grid
+   * Filter bookmarks by selected tags using search engine (CONSISTENT WITH SEARCH INPUT)
    * @param {Array} selectedTags - Array of selected tag names
    * @param {Element} container - Grid container to update
    */
   async filterBookmarksByTags(selectedTags, container) {
-    console.log(`🔍 Filtering bookmarks by tags:`, selectedTags);
+    console.log(`🔍 Tag filtering with search engine:`, selectedTags);
     
     // Update current selected tags
     this.currentSelectedTags = new Set(selectedTags);
     
-    let filteredBookmarks;
+    // Create search query for tag filtering
+    const searchQuery = {
+      text: '', // No text search for tag filtering
+      tags: selectedTags.includes('All') || selectedTags.length === 0 ? [] : selectedTags,
+      limit: PAGINATION_CONFIG.INITIAL_LOAD,
+      offset: 0,
+      sortBy: this.currentSort?.field || 'created_at',
+      sortOrder: this.currentSort?.order || 'desc'
+    };
     
-    if (selectedTags.includes('All') || selectedTags.length === 0) {
-      // Show all bookmarks when "All" is selected or no tags selected
-      filteredBookmarks = this.allBookmarks;
-      console.log(`📋 Showing all ${filteredBookmarks.length} bookmarks`);
-    } else {
-      // Filter bookmarks that have at least one of the selected tags
-      filteredBookmarks = this.allBookmarks.filter(bookmark => {
-        const bookmarkTags = bookmark.tags || [];
-        
-        // Check if bookmark has any of the selected tags
-        const hasMatchingTag = selectedTags.some(selectedTag => 
-          bookmarkTags.some(bookmarkTag => 
-            bookmarkTag.toLowerCase().includes(selectedTag.toLowerCase())
-          )
-        );
-        
-        return hasMatchingTag;
-      });
-      
-      console.log(`📋 Filtered to ${filteredBookmarks.length} bookmarks from ${this.allBookmarks.length} total`);
-    }
+    console.log(`🔍 Tag search query:`, searchQuery);
     
-    // Update only the grid content, not the entire interface
-    if (container) {
-      this.updateGridContent(filteredBookmarks);
-      // Scroll to top after filtering
-      this.scrollToTopOfGrid();
-    } else {
-      console.error('❌ Grid container not available for filtering');
-    }
+    // Reset pagination for tag filtering
+    this.resetPagination();
+    this.pagination.currentQuery = searchQuery;
+    
+    // Use the same search engine flow as search input
+    this.loadBookmarksPage(container, searchQuery, false);
   }
 
   /**

@@ -125,7 +125,7 @@ export class XSavedDatabase extends Dexie {
     this.bookmarks.hook('creating', (primKey, obj, trans) => {
       // Auto-generate textTokens if not provided
       if (!obj.textTokens) {
-        obj.textTokens = this.tokenizeText(obj.text || '');
+        obj.textTokens = this.tokenizeBookmark(obj);
       }
       
       // Ensure both timestamps are valid ISO strings
@@ -152,6 +152,14 @@ export class XSavedDatabase extends Dexie {
 
     this.bookmarks.hook('updating', (modifications, primKey, obj, trans) => {
       console.log(`🔄 Updating bookmark: ${primKey}`, modifications);
+      
+      // Auto-regenerate textTokens if any searchable field was modified
+      if (modifications.text !== undefined || modifications.author !== undefined || modifications.tags !== undefined) {
+        // Merge current object with modifications to get full context
+        const updatedObj = { ...obj, ...modifications };
+        modifications.textTokens = this.tokenizeBookmark(updatedObj);
+        console.log(`🔄 Regenerated textTokens for bookmark: ${primKey}`);
+      }
     });
 
     this.bookmarks.hook('deleting', (primKey, obj, trans) => {
@@ -538,6 +546,7 @@ export class XSavedDatabase extends Dexie {
 
   /**
    * Tokenize text for search indexing
+   * ENHANCED: Now includes text, author, and tags for comprehensive search
    */
   private tokenizeText(text: string): string[] {
     if (!text) return [];
@@ -548,6 +557,38 @@ export class XSavedDatabase extends Dexie {
       .split(/\s+/)
       .filter(token => token.length > 2) // Only tokens longer than 2 chars
       .slice(0, 50); // Limit tokens per bookmark
+  }
+
+  /**
+   * Tokenize bookmark for comprehensive search indexing
+   * NEW: Includes text, author, and tags
+   */
+  private tokenizeBookmark(bookmark: any): string[] {
+    const tokens = new Set<string>();
+    
+    // Tokenize tweet text
+    if (bookmark.text) {
+      const textTokens = this.tokenizeText(bookmark.text);
+      textTokens.forEach(token => tokens.add(token));
+    }
+    
+    // Tokenize author name
+    if (bookmark.author) {
+      const authorTokens = this.tokenizeText(bookmark.author);
+      authorTokens.forEach(token => tokens.add(token));
+    }
+    
+    // Tokenize tags
+    if (bookmark.tags && Array.isArray(bookmark.tags)) {
+      bookmark.tags.forEach(tag => {
+        if (typeof tag === 'string') {
+          const tagTokens = this.tokenizeText(tag);
+          tagTokens.forEach(token => tokens.add(token));
+        }
+      });
+    }
+    
+    return Array.from(tokens).slice(0, 100); // Limit total tokens per bookmark
   }
 
   /**
