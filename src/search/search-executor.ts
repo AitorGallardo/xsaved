@@ -13,6 +13,7 @@ import {
   SearchAnalytics,
   SearchEngineConfig 
 } from './types';
+import { Limits } from '../config/limits';
 
 export class SearchExecutor {
   private config: SearchEngineConfig;
@@ -53,7 +54,7 @@ export class SearchExecutor {
         // No filters - get recent bookmarks as starting point
         const sortBy = 'created_at'; // Always use created_at
         const recentResult = await db.getRecentBookmarks({ 
-          limit: parsedQuery.limit || 2000,
+          limit: parsedQuery.limit || Limits.defaultSearchLimit,
           sortBy: sortBy,
           offset: parsedQuery.offset  // CRITICAL FIX: Pass the offset for pagination!
         });
@@ -292,7 +293,7 @@ export class SearchExecutor {
         .where('author')
         .equalsIgnoreCase(author)
         .reverse()
-        .limit(1000)
+        .limit(Limits.indexSearchLimit)
         .toArray();
       
       console.log(`👤 Found ${results.length} bookmarks by @${author}`);
@@ -313,7 +314,7 @@ export class SearchExecutor {
         .where('bookmarked_at')
         .between(dateRange.start, dateRange.end)
         .reverse()
-        .limit(5000)
+        .limit(Limits.substringSearchLimit)
         .toArray();
       
       console.log(`📅 Found ${results.length} bookmarks in date range ${dateRange.start} to ${dateRange.end}`);
@@ -334,7 +335,7 @@ export class SearchExecutor {
         .where('textTokens')
         .anyOfIgnoreCase([token])
         .reverse()
-        .limit(2000)
+        .limit(Limits.indexSearchLimit)
         .toArray();
       
       console.log(`🔍 Found ${results.length} bookmarks with exact token "${token}"`);
@@ -354,7 +355,7 @@ export class SearchExecutor {
       const allBookmarks = await db.bookmarks
         .orderBy('created_at')
         .reverse()
-        .limit(5000) // Reasonable limit for substring search
+        .limit(Limits.substringSearchLimit) // Reasonable limit for substring search
         .toArray();
       
       console.log(`🔍 Searching ${allBookmarks.length} bookmarks with substring logic`);
@@ -457,7 +458,7 @@ export class SearchExecutor {
             return false;
           });
         })
-        .limit(5000) // Reasonable limit
+        .limit(Limits.substringSearchLimit) // Reasonable limit
         .toArray();
       
       console.log(`🔍 Dexie multi-column search found ${results.length} matches`);
@@ -481,7 +482,7 @@ export class SearchExecutor {
             (!bookmark.media_urls || bookmark.media_urls.length === 0)
         )
         .reverse()
-        .limit(5000)
+        .limit(Limits.substringSearchLimit)
         .toArray();
       
       console.log(`📷 Found ${results.length} bookmarks ${hasMedia ? 'with' : 'without'} media`);

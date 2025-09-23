@@ -12,6 +12,7 @@ import {
   TagSuggestion,
   TextSearchConfig 
 } from './types';
+import { Limits } from '../config/limits';
 
 export class SearchEngine {
   private queryParser: QueryParser;
@@ -86,21 +87,21 @@ export class SearchEngine {
    * Quick tag-only search (optimized for autocomplete)
    */
   async quickTagSearch(tag: string): Promise<SearchResult> {
-    return this.search({ tags: [tag], limit: 20 });
+    return this.search({ tags: [tag], limit: Limits.quickSearchLimit });
   }
 
   /**
    * Text-only search (for search-as-you-type)
    */
   async quickTextSearch(text: string): Promise<SearchResult> {
-    return this.search({ text, limit: 20 });
+    return this.search({ text, limit: Limits.quickSearchLimit });
   }
 
   /**
    * Author search
    */
   async searchByAuthor(author: string): Promise<SearchResult> {
-    return this.search({ author, limit: 50 });
+    return this.search({ author, limit: Limits.authorSearchLimit });
   }
 
   /**
@@ -110,7 +111,7 @@ export class SearchEngine {
     return this.search({ 
       ...filters, 
       sortBy: 'date', 
-      limit: filters?.limit || 50 
+      limit: filters?.limit || Limits.defaultQueryLimit 
     });
   }
 
@@ -178,7 +179,7 @@ export class SearchEngine {
       },
       caching: {
         enabled: true,
-        maxCacheSize: 100,       // Cache 100 recent queries
+        maxCacheSize: Limits.cacheSize,       // Cache entries from centralized config
         cacheTimeout: 5 * 60 * 1000  // 5 minutes
       },
       textSearch: {

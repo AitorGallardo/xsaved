@@ -60,11 +60,12 @@ const safeRuntimeMessage = (message, callback) => {
 };
 
 // ===== CONFIGURATION =====
-const DEFAULT_BOOKMARK_LIMIT = 3000; // Legacy - will be replaced by pagination
+// Centralized limits configuration - matches limits.ts
+const DEFAULT_BOOKMARK_LIMIT = 5000; // Default search limit (matches limits.ts)
 const PAGINATION_CONFIG = {
-  INITIAL_LOAD: 200,        // First load: 20 bookmarks for debugging
-  PAGE_SIZE: 200,           // Each subsequent load: 20 more bookmarks
-  SCROLL_THRESHOLD: 0.9    // Trigger next load when 90% scrolled
+  INITIAL_LOAD: 200,        // First load: 200 bookmarks (matches limits.ts)
+  PAGE_SIZE: 200,           // Each subsequent load: 200 more bookmarks (matches limits.ts)
+  SCROLL_THRESHOLD: 0.9    // Trigger next load when 90% scrolled (matches limits.ts)
 };
 
 // ===== INITIALIZATION =====
@@ -1862,61 +1863,25 @@ class XSavedContentScript {
     const searchInput = document.querySelector('.xsaved-search-input');
     const currentSearchTerm = searchInput ? searchInput.value.trim() : '';
 
-    if (currentSearchTerm) {
-      console.log(`🔍 Re-executing search "${currentSearchTerm}" with new sorting: ${sortType}`);
-      
-      chrome.runtime.sendMessage({
-        action: 'searchBookmarks', 
-        query: { 
-          text: currentSearchTerm, 
-          limit: this.getBookmarkLimit(),
-          sortBy: sortBy, 
-          sortOrder: sortOrder 
-        }
-      }, (response) => {
-        if (response?.success) {
-          let searchResults = [];
-          
-          // Handle different response structures
-          if (response.result?.bookmarks) {
-            searchResults = response.result.bookmarks.map(scoredBookmark => {
-              return scoredBookmark.bookmark || scoredBookmark;
-            });
-          } else if (Array.isArray(response.result)) {
-            searchResults = response.result;
-          } else {
-            console.warn('⚠️ Unexpected response structure:', response);
-            return;
-          }
-          
-          console.log(`✅ Search + sort completed: "${currentSearchTerm}" → ${searchResults.length} results with ${sortType}`);
-          this.updateGridContent(searchResults);
-          this.scrollToTopOfGrid();
-        } else {
-          console.error('❌ Failed to fetch search results with sorting:', response);
-        }
-      });
-      return; // Exit early since we're handling this asynchronously
-    }
-
-    // OPTIMIZED: Remove client-side sorting, use database sorting with pagination
+    // UNIFIED APPROACH: Always use the same flow for consistency
     
-    // Create new query with sorting
+    // Create search query with sorting
     const query = {
-      text: currentSearchTerm,
-      limit: PAGINATION_CONFIG.INITIAL_LOAD,  // Use pagination config
+      text: currentSearchTerm, // Empty string when no search
+      limit: this.getBookmarkLimit(), // Use same limit for both search and no-search
       offset: 0,  // Reset to first page
       sortBy: sortBy,
       sortOrder: sortOrder
     };
 
+    console.log(`🔄 Applying sorting: ${sortType} (search: "${currentSearchTerm || 'none'}")`);
+    
     // Reset pagination and reload with new sorting
     this.resetPagination();
     this.pagination.currentQuery = query;
     
     const container = this.currentGridContainer;
     if (container) {
-      console.log(`🔄 Reloading with new sort: ${sortType} (search: "${currentSearchTerm || 'none'}")`);
       this.loadBookmarksPage(container, query, false); // false = replace, not append
       this.scrollToTopOfGrid();
     } else {

@@ -10,6 +10,7 @@ import {
   QueryExecutionPlan,
   TextSearchConfig 
 } from './types';
+import { Limits } from '../config/limits';
 
 export class QueryParser {
   private textConfig: TextSearchConfig;
@@ -41,7 +42,7 @@ export class QueryParser {
       originalQuery: query,
       sortBy: query.sortBy || 'relevance',
       sortOrder: query.sortOrder || 'desc',
-      limit: query.limit || 50,
+      limit: query.limit || Limits.defaultSearchLimit,
       offset: query.offset || 0
     };
 
@@ -323,7 +324,7 @@ export class QueryParser {
       excludeTags: query.excludeTags?.sort(),
       hasMedia: query.hasMedia,
       sortBy: query.sortBy || 'relevance',
-      limit: query.limit || 50
+      limit: query.limit || Limits.defaultSearchLimit
     };
     
     return btoa(JSON.stringify(normalized)).replace(/[+/=]/g, '');

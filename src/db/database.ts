@@ -16,6 +16,7 @@ import {
   QueryOptions
 } from './types';
 import { normalizeDateToISO } from '../utils/sortIndex-utils';
+import { Limits } from '../config/limits';
 
 // ========================
 // DATABASE SCHEMA DESIGN
@@ -417,14 +418,14 @@ export class XSavedDatabase extends Dexie {
         // Filter to only bookmarks that have ALL required tags
         return results.filter(bookmark => 
           tags.every(tag => bookmark.tags?.includes(tag))
-        ).slice(0, options.limit || 50);
+        ).slice(0, options.limit || Limits.defaultQueryLimit);
       } else {
         // OR operation: bookmark must have ANY of the tags
         query = this.bookmarks
           .where('tags')
           .anyOf(tags)
           .reverse()
-          .limit(options.limit || 50);
+          .limit(options.limit || Limits.defaultQueryLimit);
         
         return await query.toArray();
       }
@@ -445,7 +446,7 @@ export class XSavedDatabase extends Dexie {
         .where('author')
         .equalsIgnoreCase(author)
         .reverse()
-        .limit(options.limit || 50)
+        .limit(options.limit || Limits.defaultQueryLimit)
         .toArray();
       
       console.log(`👤 Found ${results.length} bookmarks by @${author}`);
@@ -475,7 +476,7 @@ export class XSavedDatabase extends Dexie {
   /**
    * Get popular tags (by usage count)
    */
-  async getPopularTags(limit: number = 20): Promise<TagEntity[]> {
+  async getPopularTags(limit: number = Limits.popularTagsLimit): Promise<TagEntity[]> {
     try {
       return await this.tags
         .orderBy('usageCount')
@@ -491,7 +492,7 @@ export class XSavedDatabase extends Dexie {
   /**
    * Search tags by name
    */
-  async searchTags(query: string, limit: number = 10): Promise<TagEntity[]> {
+  async searchTags(query: string, limit: number = Limits.searchTagsLimit): Promise<TagEntity[]> {
     try {
       if (!query.trim()) return [];
       
@@ -556,7 +557,7 @@ export class XSavedDatabase extends Dexie {
       .replace(/[^\w\s#@]/g, ' ') // Keep hashtags and mentions
       .split(/\s+/)
       .filter(token => token.length > 2) // Only tokens longer than 2 chars
-      .slice(0, 50); // Limit tokens per bookmark
+      .slice(0, Limits.maxTokensPerBookmark); // Limit tokens per bookmark
   }
 
   /**
@@ -588,7 +589,7 @@ export class XSavedDatabase extends Dexie {
       });
     }
     
-    return Array.from(tokens).slice(0, 100); // Limit total tokens per bookmark
+    return Array.from(tokens).slice(0, Limits.maxTokensPerBookmark); // Limit total tokens per bookmark
   }
 
   /**
@@ -607,7 +608,7 @@ export class XSavedDatabase extends Dexie {
         () => this.getAllBookmarks({
           sortBy: options.sortBy || 'created_at',
           sortOrder: 'desc',
-          limit: options.limit || 50,
+          limit: options.limit || Limits.defaultQueryLimit,
           offset: options.offset  // CRITICAL FIX: Pass offset to getAllBookmarks
         })
       );
@@ -635,7 +636,7 @@ export class XSavedDatabase extends Dexie {
     try {
       const { result, metrics } = await this.withPerformanceTracking(
         'getBookmarksByTag',
-        () => this.searchByTags([tag], { limit: 1000, matchAll: false })
+        () => this.searchByTags([tag], { limit: Limits.maxQueryLimit, matchAll: false })
       );
       
       return { 
@@ -768,7 +769,7 @@ export class XSavedDatabase extends Dexie {
     const results = await query_builder.toArray();
     
     // Apply pagination to search results
-    const result = results.slice(options.offset || 0, (options.offset || 0) + (options.limit || 10000));
+    const result = results.slice(options.offset || 0, (options.offset || 0) + (options.limit || Limits.maxQueryLimit));
     
     console.log(`🔍 Text search "${query}" returned ${result.length} bookmarks`);
     return result;

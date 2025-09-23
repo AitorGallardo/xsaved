@@ -77,12 +77,157 @@ const {
 
 /* harmony default export */ const import_wrapper_prod = (Dexie);
 
+;// ./src/config/limits.ts
+/**
+ * XSaved Extension v2 - Centralized Limits Configuration
+ * Prevents hardcoded limits and ensures consistent behavior across the application
+ */
+/**
+ * Default limits configuration
+ * These values are carefully chosen based on performance testing and user experience
+ */
+const DEFAULT_LIMITS = {
+    pagination: {
+        initialLoad: 200, // First load: 200 bookmarks for good UX
+        pageSize: 200, // Each subsequent load: 200 more bookmarks
+        maxPages: 50, // Maximum 50 pages (10,000 bookmarks total)
+        scrollThreshold: 0.9 // Trigger next load when 90% scrolled
+    },
+    search: {
+        defaultLimit: 5000, // Default search: 3000 results (matches content script)
+        maxSearchLimit: 20000, // Maximum search: 10,000 results
+        quickSearchLimit: 20, // Fast search: 20 results
+        textSearchLimit: 3000, // Text search: 3000 results
+        tagSearchLimit: 50, // Tag search: 50 results
+        authorSearchLimit: 50 // Author search: 50 results
+    },
+    database: {
+        defaultQueryLimit: 50, // Default database: 50 results
+        maxQueryLimit: 10000, // Maximum database: 10,000 results
+        substringSearchLimit: 5000, // Substring search: 5000 results
+        indexSearchLimit: 2000, // Index search: 2000 results
+        popularTagsLimit: 20, // Popular tags: 20 results
+        searchTagsLimit: 10 // Tag search: 10 results
+    },
+    performance: {
+        batchSize: 1000, // Bulk operations: 1000 items
+        cacheSize: 100, // Cache: 100 entries
+        maxBookmarksForExport: 500, // Export: 500 bookmarks max
+        maxTokensPerBookmark: 100, // Tokenization: 100 tokens max
+        maxTagsPerBookmark: 50 // Tags: 50 tags max per bookmark
+    },
+    ui: {
+        gridColumns: 3, // Grid: 3 columns
+        maxVisibleBookmarks: 3000, // UI: 3000 visible bookmarks
+        debounceMs: 300, // Search: 300ms debounce
+        loadingTimeoutMs: 5000 // Loading: 5s timeout
+    }
+};
+/**
+ * Production limits configuration
+ * More conservative limits for production environments
+ */
+const PRODUCTION_LIMITS = {
+    ...DEFAULT_LIMITS,
+    pagination: {
+        ...DEFAULT_LIMITS.pagination,
+        initialLoad: 100, // Production: 100 bookmarks first load
+        pageSize: 100, // Production: 100 bookmarks per page
+        maxPages: 100 // Production: 100 pages max
+    },
+    search: {
+        ...DEFAULT_LIMITS.search,
+        defaultLimit: 2000, // Production: 2000 default results
+        maxSearchLimit: 5000 // Production: 5000 max results
+    }
+};
+/**
+ * Development limits configuration
+ * More generous limits for development and testing
+ */
+const DEVELOPMENT_LIMITS = {
+    ...DEFAULT_LIMITS,
+    search: {
+        ...DEFAULT_LIMITS.search,
+        defaultLimit: 5000, // Dev: 5000 default results
+        maxSearchLimit: 20000 // Dev: 20,000 max results
+    },
+    database: {
+        ...DEFAULT_LIMITS.database,
+        defaultQueryLimit: 100, // Dev: 100 default results
+        maxQueryLimit: 20000 // Dev: 20,000 max results
+    }
+};
+/**
+ * Get limits configuration - simplified version
+ */
+function getLimitsConfig() {
+    return DEFAULT_LIMITS;
+}
+/**
+ * Validate limit value against configuration
+ */
+function validateLimit(limit, category, key) {
+    const config = getLimitsConfig();
+    const maxLimit = config[category][key];
+    if (limit > maxLimit) {
+        console.warn(`⚠️ Limit ${limit} exceeds maximum ${maxLimit} for ${category}.${key}`);
+        return maxLimit;
+    }
+    return limit;
+}
+/**
+ * Get limit with fallback
+ */
+function getLimit(requestedLimit, category, key) {
+    const config = getLimitsConfig();
+    const defaultLimit = config[category][key];
+    if (requestedLimit === undefined || requestedLimit === null) {
+        return defaultLimit;
+    }
+    return validateLimit(requestedLimit, category, key);
+}
+// Export commonly used limit getters for convenience
+const Limits = {
+    // Pagination
+    get initialLoad() { return getLimitsConfig().pagination.initialLoad; },
+    get pageSize() { return getLimitsConfig().pagination.pageSize; },
+    get maxPages() { return getLimitsConfig().pagination.maxPages; },
+    get scrollThreshold() { return getLimitsConfig().pagination.scrollThreshold; },
+    // Search
+    get defaultSearchLimit() { return getLimitsConfig().search.defaultLimit; },
+    get maxSearchLimit() { return getLimitsConfig().search.maxSearchLimit; },
+    get quickSearchLimit() { return getLimitsConfig().search.quickSearchLimit; },
+    get textSearchLimit() { return getLimitsConfig().search.textSearchLimit; },
+    get tagSearchLimit() { return getLimitsConfig().search.tagSearchLimit; },
+    get authorSearchLimit() { return getLimitsConfig().search.authorSearchLimit; },
+    // Database
+    get defaultQueryLimit() { return getLimitsConfig().database.defaultQueryLimit; },
+    get maxQueryLimit() { return getLimitsConfig().database.maxQueryLimit; },
+    get substringSearchLimit() { return getLimitsConfig().database.substringSearchLimit; },
+    get indexSearchLimit() { return getLimitsConfig().database.indexSearchLimit; },
+    get popularTagsLimit() { return getLimitsConfig().database.popularTagsLimit; },
+    get searchTagsLimit() { return getLimitsConfig().database.searchTagsLimit; },
+    // Performance
+    get batchSize() { return getLimitsConfig().performance.batchSize; },
+    get cacheSize() { return getLimitsConfig().performance.cacheSize; },
+    get maxBookmarksForExport() { return getLimitsConfig().performance.maxBookmarksForExport; },
+    get maxTokensPerBookmark() { return getLimitsConfig().performance.maxTokensPerBookmark; },
+    get maxTagsPerBookmark() { return getLimitsConfig().performance.maxTagsPerBookmark; },
+    // UI
+    get gridColumns() { return getLimitsConfig().ui.gridColumns; },
+    get maxVisibleBookmarks() { return getLimitsConfig().ui.maxVisibleBookmarks; },
+    get debounceMs() { return getLimitsConfig().ui.debounceMs; },
+    get loadingTimeoutMs() { return getLimitsConfig().ui.loadingTimeoutMs; }
+};
+
 ;// ./src/db/database.ts
 /**
  * XSaved Extension v2 - Consolidated Database Layer
  * Single Dexie implementation with consistent API
  * Replaces: database.ts (877 lines) + database-dexie.ts (534 lines)
  */
+
 
 // ========================
 // DATABASE SCHEMA DESIGN
@@ -414,7 +559,7 @@ class XSavedDatabase extends import_wrapper_prod {
                 query = this.bookmarks.where('tags').anyOf(tags);
                 const results = await query.toArray();
                 // Filter to only bookmarks that have ALL required tags
-                return results.filter(bookmark => tags.every(tag => bookmark.tags?.includes(tag))).slice(0, options.limit || 50);
+                return results.filter(bookmark => tags.every(tag => bookmark.tags?.includes(tag))).slice(0, options.limit || Limits.defaultQueryLimit);
             }
             else {
                 // OR operation: bookmark must have ANY of the tags
@@ -422,7 +567,7 @@ class XSavedDatabase extends import_wrapper_prod {
                     .where('tags')
                     .anyOf(tags)
                     .reverse()
-                    .limit(options.limit || 50);
+                    .limit(options.limit || Limits.defaultQueryLimit);
                 return await query.toArray();
             }
         }
@@ -440,7 +585,7 @@ class XSavedDatabase extends import_wrapper_prod {
                 .where('author')
                 .equalsIgnoreCase(author)
                 .reverse()
-                .limit(options.limit || 50)
+                .limit(options.limit || Limits.defaultQueryLimit)
                 .toArray();
             console.log(`👤 Found ${results.length} bookmarks by @${author}`);
             return results;
@@ -468,7 +613,7 @@ class XSavedDatabase extends import_wrapper_prod {
     /**
      * Get popular tags (by usage count)
      */
-    async getPopularTags(limit = 20) {
+    async getPopularTags(limit = Limits.popularTagsLimit) {
         try {
             return await this.tags
                 .orderBy('usageCount')
@@ -484,7 +629,7 @@ class XSavedDatabase extends import_wrapper_prod {
     /**
      * Search tags by name
      */
-    async searchTags(query, limit = 10) {
+    async searchTags(query, limit = Limits.searchTagsLimit) {
         try {
             if (!query.trim())
                 return [];
@@ -546,7 +691,7 @@ class XSavedDatabase extends import_wrapper_prod {
             .replace(/[^\w\s#@]/g, ' ') // Keep hashtags and mentions
             .split(/\s+/)
             .filter(token => token.length > 2) // Only tokens longer than 2 chars
-            .slice(0, 50); // Limit tokens per bookmark
+            .slice(0, Limits.maxTokensPerBookmark); // Limit tokens per bookmark
     }
     /**
      * Tokenize bookmark for comprehensive search indexing
@@ -573,7 +718,7 @@ class XSavedDatabase extends import_wrapper_prod {
                 }
             });
         }
-        return Array.from(tokens).slice(0, 100); // Limit total tokens per bookmark
+        return Array.from(tokens).slice(0, Limits.maxTokensPerBookmark); // Limit total tokens per bookmark
     }
     /**
      * Get recent bookmarks (compatibility method for search engine)
@@ -584,7 +729,7 @@ class XSavedDatabase extends import_wrapper_prod {
             const { result, metrics } = await this.withPerformanceTracking('getRecentBookmarks', () => this.getAllBookmarks({
                 sortBy: options.sortBy || 'created_at',
                 sortOrder: 'desc',
-                limit: options.limit || 50,
+                limit: options.limit || Limits.defaultQueryLimit,
                 offset: options.offset // CRITICAL FIX: Pass offset to getAllBookmarks
             }));
             console.log(`🔍 getRecentBookmarks returning ${result?.length || 0} bookmarks`);
@@ -607,7 +752,7 @@ class XSavedDatabase extends import_wrapper_prod {
      */
     async getBookmarksByTag(tag) {
         try {
-            const { result, metrics } = await this.withPerformanceTracking('getBookmarksByTag', () => this.searchByTags([tag], { limit: 1000, matchAll: false }));
+            const { result, metrics } = await this.withPerformanceTracking('getBookmarksByTag', () => this.searchByTags([tag], { limit: Limits.maxQueryLimit, matchAll: false }));
             return {
                 success: true,
                 data: result,
@@ -714,7 +859,7 @@ class XSavedDatabase extends import_wrapper_prod {
         }
         const results = await query_builder.toArray();
         // Apply pagination to search results
-        const result = results.slice(options.offset || 0, (options.offset || 0) + (options.limit || 10000));
+        const result = results.slice(options.offset || 0, (options.offset || 0) + (options.limit || Limits.maxQueryLimit));
         console.log(`🔍 Text search "${query}" returned ${result.length} bookmarks`);
         return result;
     }
@@ -1059,6 +1204,7 @@ const MIGRATION_HELPERS = {
  * XSaved Extension v2 - Query Parser
  * Transforms user input into optimized search queries
  */
+
 class QueryParser {
     constructor(textConfig) {
         this.textConfig = textConfig;
@@ -1085,7 +1231,7 @@ class QueryParser {
             originalQuery: query,
             sortBy: query.sortBy || 'relevance',
             sortOrder: query.sortOrder || 'desc',
-            limit: query.limit || 50,
+            limit: query.limit || Limits.defaultSearchLimit,
             offset: query.offset || 0
         };
         // Parse text input
@@ -1324,7 +1470,7 @@ class QueryParser {
             excludeTags: query.excludeTags?.sort(),
             hasMedia: query.hasMedia,
             sortBy: query.sortBy || 'relevance',
-            limit: query.limit || 50
+            limit: query.limit || Limits.defaultSearchLimit
         };
         return btoa(JSON.stringify(normalized)).replace(/[+/=]/g, '');
     }
@@ -1336,6 +1482,7 @@ class QueryParser {
  * Executes optimized queries using pure Dexie API
  * OPTIMIZED: Removed raw IndexedDB transactions, now uses native Dexie queries
  */
+
 
 class SearchExecutor {
     constructor(config) {
@@ -1367,7 +1514,7 @@ class SearchExecutor {
                 // No filters - get recent bookmarks as starting point
                 const sortBy = 'created_at'; // Always use created_at
                 const recentResult = await db.getRecentBookmarks({
-                    limit: parsedQuery.limit || 2000,
+                    limit: parsedQuery.limit || Limits.defaultSearchLimit,
                     sortBy: sortBy,
                     offset: parsedQuery.offset // CRITICAL FIX: Pass the offset for pagination!
                 });
@@ -1551,7 +1698,7 @@ class SearchExecutor {
                 .where('author')
                 .equalsIgnoreCase(author)
                 .reverse()
-                .limit(1000)
+                .limit(Limits.indexSearchLimit)
                 .toArray();
             console.log(`👤 Found ${results.length} bookmarks by @${author}`);
             return results;
@@ -1571,7 +1718,7 @@ class SearchExecutor {
                 .where('bookmarked_at')
                 .between(dateRange.start, dateRange.end)
                 .reverse()
-                .limit(5000)
+                .limit(Limits.substringSearchLimit)
                 .toArray();
             console.log(`📅 Found ${results.length} bookmarks in date range ${dateRange.start} to ${dateRange.end}`);
             return results;
@@ -1591,7 +1738,7 @@ class SearchExecutor {
                 .where('textTokens')
                 .anyOfIgnoreCase([token])
                 .reverse()
-                .limit(2000)
+                .limit(Limits.indexSearchLimit)
                 .toArray();
             console.log(`🔍 Found ${results.length} bookmarks with exact token "${token}"`);
             return results;
@@ -1610,7 +1757,7 @@ class SearchExecutor {
             const allBookmarks = await db.bookmarks
                 .orderBy('created_at')
                 .reverse()
-                .limit(5000) // Reasonable limit for substring search
+                .limit(Limits.substringSearchLimit) // Reasonable limit for substring search
                 .toArray();
             console.log(`🔍 Searching ${allBookmarks.length} bookmarks with substring logic`);
             // Apply substring filtering with AND logic for multiple tokens
@@ -1693,7 +1840,7 @@ class SearchExecutor {
                     return false;
                 });
             })
-                .limit(5000) // Reasonable limit
+                .limit(Limits.substringSearchLimit) // Reasonable limit
                 .toArray();
             console.log(`🔍 Dexie multi-column search found ${results.length} matches`);
             return results;
@@ -1714,7 +1861,7 @@ class SearchExecutor {
                 (bookmark.media_urls && bookmark.media_urls.length > 0) :
                 (!bookmark.media_urls || bookmark.media_urls.length === 0))
                 .reverse()
-                .limit(5000)
+                .limit(Limits.substringSearchLimit)
                 .toArray();
             console.log(`📷 Found ${results.length} bookmarks ${hasMedia ? 'with' : 'without'} media`);
             return results;
@@ -1834,6 +1981,7 @@ class SearchExecutor {
  */
 
 
+
 class SearchEngine {
     constructor(config) {
         this.config = this.createDefaultConfig(config);
@@ -1891,19 +2039,19 @@ class SearchEngine {
      * Quick tag-only search (optimized for autocomplete)
      */
     async quickTagSearch(tag) {
-        return this.search({ tags: [tag], limit: 20 });
+        return this.search({ tags: [tag], limit: Limits.quickSearchLimit });
     }
     /**
      * Text-only search (for search-as-you-type)
      */
     async quickTextSearch(text) {
-        return this.search({ text, limit: 20 });
+        return this.search({ text, limit: Limits.quickSearchLimit });
     }
     /**
      * Author search
      */
     async searchByAuthor(author) {
-        return this.search({ author, limit: 50 });
+        return this.search({ author, limit: Limits.authorSearchLimit });
     }
     /**
      * Recent bookmarks with optional filters
@@ -1912,7 +2060,7 @@ class SearchEngine {
         return this.search({
             ...filters,
             sortBy: 'date',
-            limit: filters?.limit || 50
+            limit: filters?.limit || Limits.defaultQueryLimit
         });
     }
     /**
@@ -1971,7 +2119,7 @@ class SearchEngine {
             },
             caching: {
                 enabled: true,
-                maxCacheSize: 100, // Cache 100 recent queries
+                maxCacheSize: Limits.cacheSize, // Cache entries from centralized config
                 cacheTimeout: 5 * 60 * 1000 // 5 minutes
             },
             textSearch: {
@@ -3177,6 +3325,7 @@ console.log('📡 XSaved v2 Communicator utility loaded - ready for message pass
 // Import our Components 1 & 2 (TypeScript source - Webpack will bundle)
 
 
+
 // Import existing proven utilities (keep .js extension for webpack)
 
 
@@ -3642,7 +3791,7 @@ const handleSearchBookmarks = async (query, sendResponse) => {
                 }
                 return true;
             })
-                .slice(0, query.limit || 50);
+                .slice(0, query.limit || Limits.defaultQueryLimit);
             console.log(`🔍 Fallback search found ${bookmarks.length} bookmarks`);
             sendResponse({ success: true, result: { results: bookmarks, totalFound: bookmarks.length } });
         }
@@ -4042,14 +4191,13 @@ class InlineExportManager {
         try {
             console.log(`📄 [SW] Generating PDF for ${bookmarks.length} bookmarks`);
             // Limit bookmarks for PDF to prevent hanging
-            const maxBookmarksForPDF = 500;
-            const limitedBookmarks = bookmarks.slice(0, maxBookmarksForPDF);
-            if (bookmarks.length > maxBookmarksForPDF) {
-                console.warn(`⚠️ [SW] PDF export limited to ${maxBookmarksForPDF} bookmarks (requested: ${bookmarks.length})`);
+            const limitedBookmarks = bookmarks.slice(0, Limits.maxBookmarksForExport);
+            if (bookmarks.length > Limits.maxBookmarksForExport) {
+                console.warn(`⚠️ [SW] PDF export limited to ${Limits.maxBookmarksForExport} bookmarks (requested: ${bookmarks.length})`);
             }
             // Generate PDF content using a simple text-based format
             // This creates a PDF-like structure that can be opened by PDF viewers
-            const pdfContent = this.generatePDFContent(limitedBookmarks, bookmarks.length > maxBookmarksForPDF);
+            const pdfContent = this.generatePDFContent(limitedBookmarks, bookmarks.length > Limits.maxBookmarksForExport);
             const blob = new Blob([pdfContent], { type: 'application/pdf' });
             return {
                 success: true,
@@ -4276,7 +4424,7 @@ if (typeof self !== 'undefined') {
                 console.error('❌ Database inspection failed:', error);
             }
         },
-        listBookmarks: async (limit = 10) => {
+        listBookmarks: async (limit = Limits.defaultQueryLimit) => {
             console.log(`🔍 === Last ${limit} Bookmarks ===`);
             if (!serviceWorker.db) {
                 console.error('❌ Database not initialized');
@@ -4435,7 +4583,7 @@ if (typeof self !== 'undefined') {
                     console.error('❌ Database not initialized');
                     return { success: false, error: 'Database not initialized' };
                 }
-                const result = await serviceWorker.db.getAllBookmarks({ limit: 10000 });
+                const result = await serviceWorker.db.getAllBookmarks({ limit: Limits.maxQueryLimit });
                 if (!result.success || !result.data) {
                     console.error('❌ Failed to fetch bookmarks:', result.error);
                     return { success: false, error: result.error };
@@ -4491,7 +4639,7 @@ if (typeof self !== 'undefined') {
                     console.error('❌ Database not initialized');
                     return { success: false, error: 'Database not initialized' };
                 }
-                const result = await serviceWorker.db.getAllBookmarks({ limit: 10000 });
+                const result = await serviceWorker.db.getAllBookmarks({ limit: Limits.maxQueryLimit });
                 if (!result.success || !result.data) {
                     return { success: false, error: result.error };
                 }
@@ -4541,7 +4689,7 @@ if (typeof self !== 'undefined') {
         async debugBookmarkDates() {
             try {
                 console.log('🔍 DEBUG: Analyzing bookmark dates...\n');
-                const result = await db.searchBookmarks({ limit: 10, sortBy: 'created_at', sortOrder: 'asc' });
+                const result = await db.searchBookmarks({ limit: Limits.defaultQueryLimit, sortBy: 'created_at', sortOrder: 'asc' });
                 if (!result.success || !result.data || result.data.length === 0) {
                     console.log('❌ No bookmarks found or error occurred');
                     return;
@@ -4580,7 +4728,7 @@ if (typeof self !== 'undefined') {
         async validateDateConsistency() {
             try {
                 console.log('🔍 VALIDATION: Checking date consistency...\n');
-                const result = await db.searchBookmarks({ limit: 1000, sortBy: 'created_at', sortOrder: 'asc' });
+                const result = await db.searchBookmarks({ limit: Limits.maxQueryLimit, sortBy: 'created_at', sortOrder: 'asc' });
                 if (!result.success || !result.data) {
                     console.log('❌ Failed to fetch bookmarks for validation');
                     return;
@@ -4654,7 +4802,7 @@ if (typeof self !== 'undefined') {
         async getOldestBookmarkedAt() {
             try {
                 console.log('🔍 OLDEST BY CREATED_AT: Fetching 20 oldest tweets...\n');
-                const result = await db.searchBookmarks({ limit: 20, sortBy: 'created_at', sortOrder: 'asc' });
+                const result = await db.searchBookmarks({ limit: Limits.popularTagsLimit, sortBy: 'created_at', sortOrder: 'asc' });
                 if (!result.success || !result.data || result.data.length === 0) {
                     console.log('❌ No bookmarks found');
                     return;
@@ -4680,7 +4828,7 @@ if (typeof self !== 'undefined') {
         async getNewestBookmarkedAt() {
             try {
                 console.log('🔍 NEWEST BY CREATED_AT: Fetching 20 newest tweets...\n');
-                const result = await db.searchBookmarks({ limit: 20, sortBy: 'created_at', sortOrder: 'desc' });
+                const result = await db.searchBookmarks({ limit: Limits.popularTagsLimit, sortBy: 'created_at', sortOrder: 'desc' });
                 if (!result.success || !result.data || result.data.length === 0) {
                     console.log('❌ No bookmarks found');
                     return;
@@ -4706,7 +4854,7 @@ if (typeof self !== 'undefined') {
         async getOldestCreatedAt() {
             try {
                 console.log('🔍 OLDEST BY CREATED_AT: Fetching 20 oldest created tweets...\n');
-                const result = await db.searchBookmarks({ limit: 20, sortBy: 'created_at', sortOrder: 'asc' });
+                const result = await db.searchBookmarks({ limit: Limits.popularTagsLimit, sortBy: 'created_at', sortOrder: 'asc' });
                 if (!result.success || !result.data || result.data.length === 0) {
                     console.log('❌ No bookmarks found');
                     return;
@@ -4732,7 +4880,7 @@ if (typeof self !== 'undefined') {
         async getNewestCreatedAt() {
             try {
                 console.log('🔍 NEWEST BY CREATED_AT: Fetching 20 newest created tweets...\n');
-                const result = await db.searchBookmarks({ limit: 20, sortBy: 'created_at', sortOrder: 'desc' });
+                const result = await db.searchBookmarks({ limit: Limits.popularTagsLimit, sortBy: 'created_at', sortOrder: 'desc' });
                 if (!result.success || !result.data || result.data.length === 0) {
                     console.log('❌ No bookmarks found');
                     return;

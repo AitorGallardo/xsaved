@@ -6,6 +6,7 @@
 // Import our Components 1 & 2 (TypeScript source - Webpack will bundle)
 import { db } from '../db/index';
 import { searchEngine } from '../search/index';
+import { Limits } from '../config/limits';
 
 // Import existing proven utilities (keep .js extension for webpack)
 import { 
@@ -551,7 +552,7 @@ const handleSearchBookmarks = async (query, sendResponse) => {
           }
           return true;
         })
-        .slice(0, query.limit || 50);
+        .slice(0, query.limit || Limits.defaultQueryLimit);
       
       console.log(`🔍 Fallback search found ${bookmarks.length} bookmarks`);
       sendResponse({ success: true, result: { results: bookmarks, totalFound: bookmarks.length } });
@@ -996,16 +997,15 @@ class InlineExportManager {
       console.log(`📄 [SW] Generating PDF for ${bookmarks.length} bookmarks`);
 
       // Limit bookmarks for PDF to prevent hanging
-      const maxBookmarksForPDF = 500;
-      const limitedBookmarks = bookmarks.slice(0, maxBookmarksForPDF);
+      const limitedBookmarks = bookmarks.slice(0, Limits.maxBookmarksForExport);
       
-      if (bookmarks.length > maxBookmarksForPDF) {
-        console.warn(`⚠️ [SW] PDF export limited to ${maxBookmarksForPDF} bookmarks (requested: ${bookmarks.length})`);
+      if (bookmarks.length > Limits.maxBookmarksForExport) {
+        console.warn(`⚠️ [SW] PDF export limited to ${Limits.maxBookmarksForExport} bookmarks (requested: ${bookmarks.length})`);
       }
 
       // Generate PDF content using a simple text-based format
       // This creates a PDF-like structure that can be opened by PDF viewers
-      const pdfContent = this.generatePDFContent(limitedBookmarks, bookmarks.length > maxBookmarksForPDF);
+      const pdfContent = this.generatePDFContent(limitedBookmarks, bookmarks.length > Limits.maxBookmarksForExport);
 
       const blob = new Blob([pdfContent], { type: 'application/pdf' });
 
@@ -1255,7 +1255,7 @@ if (typeof self !== 'undefined') {
       }
     },
     
-    listBookmarks: async (limit = 10) => {
+    listBookmarks: async (limit = Limits.defaultQueryLimit) => {
       console.log(`🔍 === Last ${limit} Bookmarks ===`);
       if (!serviceWorker.db) {
         console.error('❌ Database not initialized');
@@ -1433,7 +1433,7 @@ if (typeof self !== 'undefined') {
           return { success: false, error: 'Database not initialized' };
         }
         
-        const result = await serviceWorker.db.getAllBookmarks({ limit: 10000 });
+        const result = await serviceWorker.db.getAllBookmarks({ limit: Limits.maxQueryLimit });
         if (!result.success || !result.data) {
           console.error('❌ Failed to fetch bookmarks:', result.error);
           return { success: false, error: result.error };
@@ -1504,7 +1504,7 @@ if (typeof self !== 'undefined') {
           return { success: false, error: 'Database not initialized' };
         }
         
-        const result = await serviceWorker.db.getAllBookmarks({ limit: 10000 });
+        const result = await serviceWorker.db.getAllBookmarks({ limit: Limits.maxQueryLimit });
         if (!result.success || !result.data) {
           return { success: false, error: result.error };
         }
@@ -1563,7 +1563,7 @@ if (typeof self !== 'undefined') {
       try {
         console.log('🔍 DEBUG: Analyzing bookmark dates...\n');
         
-        const result = await db.searchBookmarks({ limit: 10, sortBy: 'created_at', sortOrder: 'asc' });
+        const result = await db.searchBookmarks({ limit: Limits.defaultQueryLimit, sortBy: 'created_at', sortOrder: 'asc' });
         
         if (!result.success || !result.data || result.data.length === 0) {
           console.log('❌ No bookmarks found or error occurred');
@@ -1610,7 +1610,7 @@ if (typeof self !== 'undefined') {
       try {
         console.log('🔍 VALIDATION: Checking date consistency...\n');
         
-        const result = await db.searchBookmarks({ limit: 1000, sortBy: 'created_at', sortOrder: 'asc' });
+        const result = await db.searchBookmarks({ limit: Limits.maxQueryLimit, sortBy: 'created_at', sortOrder: 'asc' });
         
         if (!result.success || !result.data) {
           console.log('❌ Failed to fetch bookmarks for validation');
@@ -1699,7 +1699,7 @@ if (typeof self !== 'undefined') {
       try {
         console.log('🔍 OLDEST BY CREATED_AT: Fetching 20 oldest tweets...\n');
         
-        const result = await db.searchBookmarks({ limit: 20, sortBy: 'created_at', sortOrder: 'asc' });
+        const result = await db.searchBookmarks({ limit: Limits.popularTagsLimit, sortBy: 'created_at', sortOrder: 'asc' });
         
         if (!result.success || !result.data || result.data.length === 0) {
           console.log('❌ No bookmarks found');
@@ -1731,7 +1731,7 @@ if (typeof self !== 'undefined') {
       try {
         console.log('🔍 NEWEST BY CREATED_AT: Fetching 20 newest tweets...\n');
         
-        const result = await db.searchBookmarks({ limit: 20, sortBy: 'created_at', sortOrder: 'desc' });
+        const result = await db.searchBookmarks({ limit: Limits.popularTagsLimit, sortBy: 'created_at', sortOrder: 'desc' });
         
         if (!result.success || !result.data || result.data.length === 0) {
           console.log('❌ No bookmarks found');
@@ -1763,7 +1763,7 @@ if (typeof self !== 'undefined') {
       try {
         console.log('🔍 OLDEST BY CREATED_AT: Fetching 20 oldest created tweets...\n');
         
-        const result = await db.searchBookmarks({ limit: 20, sortBy: 'created_at', sortOrder: 'asc' });
+        const result = await db.searchBookmarks({ limit: Limits.popularTagsLimit, sortBy: 'created_at', sortOrder: 'asc' });
         
         if (!result.success || !result.data || result.data.length === 0) {
           console.log('❌ No bookmarks found');
@@ -1795,7 +1795,7 @@ if (typeof self !== 'undefined') {
       try {
         console.log('🔍 NEWEST BY CREATED_AT: Fetching 20 newest created tweets...\n');
         
-        const result = await db.searchBookmarks({ limit: 20, sortBy: 'created_at', sortOrder: 'desc' });
+        const result = await db.searchBookmarks({ limit: Limits.popularTagsLimit, sortBy: 'created_at', sortOrder: 'desc' });
         
         if (!result.success || !result.data || result.data.length === 0) {
           console.log('❌ No bookmarks found');
