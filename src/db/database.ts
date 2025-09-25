@@ -601,7 +601,6 @@ export class XSavedDatabase extends Dexie {
     offset?: number;  // CRITICAL FIX: Add offset support for pagination
   } = {}): Promise<DatabaseResult<BookmarkEntity[]>> {
     try {
-      console.log(`🔍 getRecentBookmarks called with options:`, options);
       
         const { result, metrics } = await this.withPerformanceTracking(
         'getRecentBookmarks',
@@ -613,7 +612,6 @@ export class XSavedDatabase extends Dexie {
         })
       );
       
-      console.log(`🔍 getRecentBookmarks returning ${result?.length || 0} bookmarks`);
       
       return { 
         success: true, 

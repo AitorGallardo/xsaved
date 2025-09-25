@@ -188,7 +188,7 @@ function getLimit(requestedLimit, category, key) {
     return validateLimit(requestedLimit, category, key);
 }
 // Export commonly used limit getters for convenience
-const Limits = {
+const limits_Limits = {
     // Pagination
     get initialLoad() { return getLimitsConfig().pagination.initialLoad; },
     get pageSize() { return getLimitsConfig().pagination.pageSize; },
@@ -559,7 +559,7 @@ class XSavedDatabase extends import_wrapper_prod {
                 query = this.bookmarks.where('tags').anyOf(tags);
                 const results = await query.toArray();
                 // Filter to only bookmarks that have ALL required tags
-                return results.filter(bookmark => tags.every(tag => bookmark.tags?.includes(tag))).slice(0, options.limit || Limits.defaultQueryLimit);
+                return results.filter(bookmark => tags.every(tag => bookmark.tags?.includes(tag))).slice(0, options.limit || limits_Limits.defaultQueryLimit);
             }
             else {
                 // OR operation: bookmark must have ANY of the tags
@@ -567,7 +567,7 @@ class XSavedDatabase extends import_wrapper_prod {
                     .where('tags')
                     .anyOf(tags)
                     .reverse()
-                    .limit(options.limit || Limits.defaultQueryLimit);
+                    .limit(options.limit || limits_Limits.defaultQueryLimit);
                 return await query.toArray();
             }
         }
@@ -585,7 +585,7 @@ class XSavedDatabase extends import_wrapper_prod {
                 .where('author')
                 .equalsIgnoreCase(author)
                 .reverse()
-                .limit(options.limit || Limits.defaultQueryLimit)
+                .limit(options.limit || limits_Limits.defaultQueryLimit)
                 .toArray();
             console.log(`👤 Found ${results.length} bookmarks by @${author}`);
             return results;
@@ -613,7 +613,7 @@ class XSavedDatabase extends import_wrapper_prod {
     /**
      * Get popular tags (by usage count)
      */
-    async getPopularTags(limit = Limits.popularTagsLimit) {
+    async getPopularTags(limit = limits_Limits.popularTagsLimit) {
         try {
             return await this.tags
                 .orderBy('usageCount')
@@ -629,7 +629,7 @@ class XSavedDatabase extends import_wrapper_prod {
     /**
      * Search tags by name
      */
-    async searchTags(query, limit = Limits.searchTagsLimit) {
+    async searchTags(query, limit = limits_Limits.searchTagsLimit) {
         try {
             if (!query.trim())
                 return [];
@@ -691,7 +691,7 @@ class XSavedDatabase extends import_wrapper_prod {
             .replace(/[^\w\s#@]/g, ' ') // Keep hashtags and mentions
             .split(/\s+/)
             .filter(token => token.length > 2) // Only tokens longer than 2 chars
-            .slice(0, Limits.maxTokensPerBookmark); // Limit tokens per bookmark
+            .slice(0, limits_Limits.maxTokensPerBookmark); // Limit tokens per bookmark
     }
     /**
      * Tokenize bookmark for comprehensive search indexing
@@ -718,21 +718,19 @@ class XSavedDatabase extends import_wrapper_prod {
                 }
             });
         }
-        return Array.from(tokens).slice(0, Limits.maxTokensPerBookmark); // Limit total tokens per bookmark
+        return Array.from(tokens).slice(0, limits_Limits.maxTokensPerBookmark); // Limit total tokens per bookmark
     }
     /**
      * Get recent bookmarks (compatibility method for search engine)
      */
     async getRecentBookmarks(options = {}) {
         try {
-            console.log(`🔍 getRecentBookmarks called with options:`, options);
             const { result, metrics } = await this.withPerformanceTracking('getRecentBookmarks', () => this.getAllBookmarks({
                 sortBy: options.sortBy || 'created_at',
                 sortOrder: 'desc',
-                limit: options.limit || Limits.defaultQueryLimit,
+                limit: options.limit || limits_Limits.defaultQueryLimit,
                 offset: options.offset // CRITICAL FIX: Pass offset to getAllBookmarks
             }));
-            console.log(`🔍 getRecentBookmarks returning ${result?.length || 0} bookmarks`);
             return {
                 success: true,
                 data: result,
@@ -752,7 +750,7 @@ class XSavedDatabase extends import_wrapper_prod {
      */
     async getBookmarksByTag(tag) {
         try {
-            const { result, metrics } = await this.withPerformanceTracking('getBookmarksByTag', () => this.searchByTags([tag], { limit: Limits.maxQueryLimit, matchAll: false }));
+            const { result, metrics } = await this.withPerformanceTracking('getBookmarksByTag', () => this.searchByTags([tag], { limit: limits_Limits.maxQueryLimit, matchAll: false }));
             return {
                 success: true,
                 data: result,
@@ -859,7 +857,7 @@ class XSavedDatabase extends import_wrapper_prod {
         }
         const results = await query_builder.toArray();
         // Apply pagination to search results
-        const result = results.slice(options.offset || 0, (options.offset || 0) + (options.limit || Limits.maxQueryLimit));
+        const result = results.slice(options.offset || 0, (options.offset || 0) + (options.limit || limits_Limits.maxQueryLimit));
         console.log(`🔍 Text search "${query}" returned ${result.length} bookmarks`);
         return result;
     }
@@ -1213,7 +1211,6 @@ class QueryParser {
      * Parse user search query into optimized execution plan
      */
     parseQuery(query) {
-        console.log(`🔍 QueryParser.parseQuery called with:`, query);
         const parsed = {
             textTokens: [],
             exactPhrases: [],
@@ -1231,13 +1228,12 @@ class QueryParser {
             originalQuery: query,
             sortBy: query.sortBy || 'relevance',
             sortOrder: query.sortOrder || 'desc',
-            limit: query.limit || Limits.defaultSearchLimit,
+            limit: query.limit || limits_Limits.defaultSearchLimit,
             offset: query.offset || 0
         };
         // Parse text input
         if (query.text) {
             this.parseTextQuery(query.text, parsed);
-            console.log(`🔍 Parsed text tokens:`, parsed.textTokens);
         }
         // Build filters
         this.buildFilters(query, parsed);
@@ -1470,10 +1466,345 @@ class QueryParser {
             excludeTags: query.excludeTags?.sort(),
             hasMedia: query.hasMedia,
             sortBy: query.sortBy || 'relevance',
-            limit: query.limit || Limits.defaultSearchLimit
+            limit: query.limit || limits_Limits.defaultSearchLimit
         };
         return btoa(JSON.stringify(normalized)).replace(/[+/=]/g, '');
     }
+}
+
+;// ./src/db/query-builder.ts
+/**
+ * XSaved Extension v2 - Native Dexie Query Builder
+ * Uses proper Dexie native methods for optimal performance
+ *
+ * Based on Dexie.js API Reference: https://dexie.org/docs/API-Reference
+ */
+
+/**
+ * Native Dexie Query Builder
+ * Uses proper Dexie methods: .where(), .filter(), .and(), .or()
+ */
+class NativeDexieQueryBuilder {
+    constructor(table) {
+        this.query = null;
+        this.queryOptions = {};
+        this.table = table;
+    }
+    /**
+     * Text search using multi-entry textTokens index
+     * Uses Dexie's native .where().anyOfIgnoreCase()
+     */
+    text(searchText) {
+        if (!searchText?.trim())
+            return this;
+        const tokens = this.tokenizeText(searchText);
+        if (tokens.length === 0)
+            return this;
+        // Native Dexie: Use multi-entry index
+        if (this.query) {
+            this.query = this.query.and(bookmark => tokens.some(token => bookmark.textTokens?.includes(token)));
+        }
+        else {
+            this.query = this.table.where('textTokens').anyOfIgnoreCase(tokens);
+        }
+        return this;
+    }
+    /**
+     * Author filter using native Dexie .equalsIgnoreCase()
+     */
+    author(authorName) {
+        if (!authorName?.trim())
+            return this;
+        if (this.query) {
+            this.query = this.query.and(bookmark => bookmark.author.toLowerCase() === authorName.toLowerCase());
+        }
+        else {
+            this.query = this.table.where('author').equalsIgnoreCase(authorName);
+        }
+        return this;
+    }
+    /**
+     * Combined text and author search using native Dexie capabilities
+     * Searches through both tweet text content AND author name
+     * Uses both textTokens (for performance) and full text field (for comprehensive matching)
+     */
+    searchTextAndAuthor(searchTerm) {
+        if (!searchTerm?.trim())
+            return this;
+        const tokens = this.tokenizeText(searchTerm);
+        const searchTermLower = searchTerm.toLowerCase();
+        if (this.query) {
+            // Collection: Use .and() with enhanced combined filter
+            this.query = this.query.and(bookmark => {
+                // Check if search term matches text content OR author
+                const authorMatch = bookmark.author.toLowerCase().includes(searchTermLower);
+                // Enhanced text matching: try both textTokens and full text field
+                let textMatch = false;
+                // IMPORTANT: This is disabled because it's not working as expected
+                // IMPORTANT: WE CHECKED AND IT LOOKS LIKE LOOKING DIRECTLY TO TEXT WORKS JUST FINE. SO EXT TOKEN MATCHING IS NOT NEEDED RIGHT NOW.
+                // It's causing the query to return no results
+                // if (bookmark.textTokens?.length > 0) {
+                //   // Fast path: check textTokens for exact matches
+                //   textMatch = tokens.some(token => bookmark.textTokens?.includes(token));
+                // }
+                if (!textMatch && bookmark.text) {
+                    // Fallback: check full text field for substring matches
+                    textMatch = bookmark.text.toLowerCase().includes(searchTermLower);
+                }
+                return textMatch || authorMatch;
+            });
+        }
+        else {
+            // Table: Use .filter() for enhanced combined search
+            this.query = this.table.filter(bookmark => {
+                // Check if search term matches text content OR author
+                const authorMatch = bookmark.author.toLowerCase().includes(searchTermLower);
+                // Enhanced text matching: try both textTokens and full text field
+                let textMatch = false;
+                if (bookmark.textTokens?.length > 0) {
+                    // Fast path: check textTokens for exact matches
+                    textMatch = tokens.some(token => bookmark.textTokens?.includes(token));
+                }
+                if (!textMatch && bookmark.text) {
+                    // Fallback: check full text field for substring matches
+                    textMatch = bookmark.text.toLowerCase().includes(searchTermLower);
+                }
+                return textMatch || authorMatch;
+            });
+        }
+        return this;
+    }
+    /**
+     * Tags filter using native Dexie .anyOf()
+     */
+    tags(tagList) {
+        if (!tagList || tagList.length === 0)
+            return this;
+        if (this.query) {
+            this.query = this.query.and(bookmark => tagList.some(tag => bookmark.tags?.includes(tag)));
+        }
+        else {
+            this.query = this.table.where('tags').anyOf(tagList);
+        }
+        return this;
+    }
+    /**
+     * Date range using native Dexie .between()
+     */
+    dateRange(start, end) {
+        if (!start || !end)
+            return this;
+        if (this.query) {
+            this.query = this.query.and(bookmark => {
+                const date = new Date(bookmark.bookmarked_at);
+                return date >= new Date(start) && date <= new Date(end);
+            });
+        }
+        else {
+            this.query = this.table.where('bookmarked_at').between(start, end, true, true);
+        }
+        return this;
+    }
+    /**
+     * Media presence filter using native Dexie .filter()
+     */
+    hasMedia(hasMedia) {
+        if (this.query) {
+            this.query = this.query.and(bookmark => hasMedia ?
+                (bookmark.media_urls && bookmark.media_urls.length > 0) :
+                (!bookmark.media_urls || bookmark.media_urls.length === 0));
+        }
+        else {
+            this.query = this.table.filter(bookmark => hasMedia ?
+                (bookmark.media_urls && bookmark.media_urls.length > 0) :
+                (!bookmark.media_urls || bookmark.media_urls.length === 0));
+        }
+        return this;
+    }
+    /**
+     * Exclude tags using native Dexie .filter()
+     */
+    excludeTags(excludeList) {
+        if (!excludeList || excludeList.length === 0)
+            return this;
+        if (this.query) {
+            this.query = this.query.and(bookmark => !excludeList.some(excludeTag => bookmark.tags?.includes(excludeTag)));
+        }
+        else {
+            this.query = this.table.filter(bookmark => !excludeList.some(excludeTag => bookmark.tags?.includes(excludeTag)));
+        }
+        return this;
+    }
+    /**
+     * Set query options
+     */
+    setOptions(opts) {
+        this.queryOptions = { ...this.queryOptions, ...opts };
+        return this;
+    }
+    /**
+     * Set limit using native Dexie .limit()
+     */
+    limit(count) {
+        this.queryOptions.limit = count;
+        return this;
+    }
+    /**
+     * Set offset using native Dexie .offset()
+     */
+    offset(count) {
+        this.queryOptions.offset = count;
+        return this;
+    }
+    /**
+     * Set sorting using native Dexie .orderBy() and .reverse()
+     */
+    sortBy(field, order = 'desc') {
+        this.queryOptions.sortBy = field;
+        this.queryOptions.sortOrder = order;
+        return this;
+    }
+    /**
+     * Execute the query using native Dexie methods
+     */
+    async execute() {
+        try {
+            let query = this.query || this.table;
+            // Apply sorting using native Dexie methods
+            if (this.queryOptions.sortBy) {
+                if (this.query) {
+                    console.log('🐈 SORTING~SORTING~SORTING for Collection');
+                    // For Collections: reverse() BEFORE sortBy() as per Dexie docs
+                    // sortBy() returns a Promise, so we need to handle it differently
+                    if (this.queryOptions.sortOrder === 'desc') {
+                        query = query.reverse();
+                    }
+                    // sortBy() returns Promise<BookmarkEntity[]>, not a Collection
+                    const results = await query.sortBy(this.queryOptions.sortBy);
+                    return this.applyPagination(results);
+                }
+                else {
+                    console.log('🐕 ORDER~ORDER~ORDER for Table');
+                    // For Tables: orderBy() then reverse() after
+                    query = query.orderBy(this.queryOptions.sortBy);
+                    if (this.queryOptions.sortOrder === 'desc') {
+                        query = query.reverse();
+                    }
+                }
+            }
+            else {
+                // Default: newest first
+                if (this.query) {
+                    // Collection - reverse() BEFORE sortBy()
+                    // sortBy() returns Promise<BookmarkEntity[]>, not a Collection
+                    const results = await query.reverse().sortBy('created_at');
+                    return this.applyPagination(results);
+                }
+                else {
+                    // Table - orderBy() then reverse()
+                    query = query.orderBy('created_at').reverse();
+                }
+            }
+            // Apply pagination using native Dexie .offset() and .limit() (for Tables only)
+            if (this.queryOptions.offset) {
+                query = query.offset(this.queryOptions.offset);
+            }
+            if (this.queryOptions.limit) {
+                query = query.limit(this.queryOptions.limit);
+            }
+            // Execute using native Dexie .toArray()
+            const results = await query.toArray();
+            console.log(`🔍 Native Dexie query executed: ${results.length} results`);
+            return results;
+        }
+        catch (error) {
+            console.error('❌ Native Dexie query failed:', error);
+            return [];
+        }
+    }
+    /**
+     * Apply pagination to results (for Collections that use sortBy)
+     */
+    applyPagination(results) {
+        let paginatedResults = results;
+        // Apply offset
+        if (this.queryOptions.offset) {
+            paginatedResults = paginatedResults.slice(this.queryOptions.offset);
+        }
+        // Apply limit
+        if (this.queryOptions.limit) {
+            paginatedResults = paginatedResults.slice(0, this.queryOptions.limit);
+        }
+        return paginatedResults;
+    }
+    /**
+     * Enhanced tokenize text for search
+     * More inclusive tokenization to capture more matches
+     */
+    tokenizeText(text) {
+        if (!text)
+            return [];
+        const tokens = text
+            .toLowerCase()
+            .replace(/[^\w\s#@-]/g, ' ') // Keep hyphens and @ symbols
+            .split(/\s+/)
+            .filter(token => token.length > 1) // Reduced from 2 to 1 for more matches
+            .slice(0, 20); // Increased from 10 to 20 tokens
+        // Add partial matches for longer terms (e.g., "javascript" -> "java", "script")
+        const partialTokens = new Set();
+        tokens.forEach(token => {
+            if (token.length > 4) {
+                // Add 3+ character prefixes
+                for (let i = 3; i < token.length; i++) {
+                    partialTokens.add(token.substring(0, i));
+                }
+            }
+        });
+        // Combine original tokens with partial matches
+        return [...new Set([...tokens, ...Array.from(partialTokens)])].slice(0, 30);
+    }
+}
+// ========================
+// CONVENIENCE FACTORY
+// ========================
+/**
+ * Create a native Dexie query builder
+ */
+function createBookmarkQuery(table) {
+    return new NativeDexieQueryBuilder(table);
+}
+// ========================
+// COMMON QUERY PATTERNS
+// ========================
+/**
+ * Recent bookmarks using native Dexie
+ */
+async function getRecentBookmarks(table, limit = Limits.defaultQueryLimit, offset = 0) {
+    return createBookmarkQuery(table)
+        .sortBy('created_at', 'desc')
+        .limit(limit)
+        .offset(offset)
+        .execute();
+}
+/**
+ * Search by text and tags using native Dexie
+ */
+async function searchBookmarksByTextAndTags(table, searchText, tags, options = {}) {
+    return createBookmarkQuery(table)
+        .text(searchText)
+        .tags(tags)
+        .setOptions(options)
+        .execute();
+}
+/**
+ * Author's bookmarks with date range using native Dexie
+ */
+async function getAuthorBookmarksInDateRange(table, author, startDate, endDate, options = {}) {
+    return createBookmarkQuery(table)
+        .author(author)
+        .dateRange(startDate, endDate)
+        .setOptions(options)
+        .execute();
 }
 
 ;// ./src/search/search-executor.ts
@@ -1482,6 +1813,7 @@ class QueryParser {
  * Executes optimized queries using pure Dexie API
  * OPTIMIZED: Removed raw IndexedDB transactions, now uses native Dexie queries
  */
+
 
 
 class SearchExecutor {
@@ -1502,7 +1834,6 @@ class SearchExecutor {
             indexesUsed: []
         };
         try {
-            console.log(`🔍 SearchExecutor.executeSearch called with:`, parsedQuery);
             // Ensure database is ready
             await db.initialize();
             // Execute primary filter first (most selective)
@@ -1514,12 +1845,11 @@ class SearchExecutor {
                 // No filters - get recent bookmarks as starting point
                 const sortBy = 'created_at'; // Always use created_at
                 const recentResult = await db.getRecentBookmarks({
-                    limit: parsedQuery.limit || Limits.defaultSearchLimit,
+                    limit: parsedQuery.limit || limits_Limits.defaultSearchLimit,
                     sortBy: sortBy,
                     offset: parsedQuery.offset // CRITICAL FIX: Pass the offset for pagination!
                 });
                 candidateBookmarks = recentResult.data || [];
-                console.log(`🔍 Retrieved ${candidateBookmarks.length} candidate bookmarks from database`);
                 analytics.indexesUsed.push(sortBy);
             }
             // Apply secondary filters
@@ -1532,7 +1862,6 @@ class SearchExecutor {
             }
             // Apply text search if present
             if (parsedQuery.textTokens.length > 0) {
-                console.log(`🔍 Applying substring text search with tokens:`, parsedQuery.textTokens);
                 if (candidateBookmarks.length === 0) {
                     // No candidates from primary filter, do substring search directly
                     candidateBookmarks = await this.searchBySubstring(parsedQuery.textTokens, analytics);
@@ -1541,7 +1870,6 @@ class SearchExecutor {
                     // Apply substring filtering to existing candidates
                     candidateBookmarks = await this.applySubstringFilter(candidateBookmarks, parsedQuery.textTokens, analytics);
                 }
-                console.log(`🔍 After substring text search: ${candidateBookmarks.length} bookmarks remaining`);
             }
             // Filter out excluded tags
             if (parsedQuery.excludedTags.length > 0) {
@@ -1596,6 +1924,172 @@ class SearchExecutor {
                 }
             };
         }
+    }
+    /**
+     * NEW: Execute search using native Dexie composable query system
+     * This replaces the complex primary/secondary filter pipeline with clean composition
+     *
+     * HOW IT WORKS:
+     * 1. Convert ParsedQuery to native Dexie query criteria
+     * 2. Use createBookmarkQuery() to build a single optimized Dexie query
+     * 3. Apply all filters using native Dexie methods (.where(), .and(), .filter())
+     * 4. Execute single query instead of multiple filter intersections
+     * 5. Return results in same format as original method
+     */
+    async executeSearchNativeDexie(parsedQuery) {
+        const startTime = performance.now();
+        let analytics = {
+            queryTime: 0,
+            indexHits: 0,
+            resultsReturned: 0,
+            cacheHit: false,
+            slowOperations: [],
+            indexesUsed: []
+        };
+        try {
+            console.log('🚀 Starting native Dexie composable search...');
+            console.log('📋 Parsed query:', {
+                textTokens: parsedQuery.textTokens,
+                requiredTags: parsedQuery.requiredTags,
+                excludedTags: parsedQuery.excludedTags,
+                filters: parsedQuery.filters?.map(f => ({ type: f.type, value: f.value })),
+                limit: parsedQuery.limit,
+                offset: parsedQuery.offset,
+                sortBy: parsedQuery.sortBy
+            });
+            // Ensure database is ready
+            await db.initialize();
+            // STEP 1: Convert ParsedQuery to native Dexie query criteria
+            const searchCriteria = this.convertParsedQueryToNativeDexie(parsedQuery);
+            console.log('🔄 Converted to native Dexie criteria:', searchCriteria);
+            // STEP 2: Build single native Dexie query using composable builder
+            const queryBuilder = createBookmarkQuery(db.bookmarks);
+            // STEP 3: Apply filters conditionally using native Dexie methods
+            if (searchCriteria.text) {
+                // ALWAYS search both text content AND author for any text search
+                console.log('🔍 Adding combined text+author search:', searchCriteria.text);
+                queryBuilder.searchTextAndAuthor(searchCriteria.text);
+                analytics.indexesUsed.push('textTokens', 'author');
+            }
+            if (searchCriteria.author && !searchCriteria.text) {
+                // Author-only filter (when no text search)
+                console.log('👤 Adding author filter:', searchCriteria.author);
+                queryBuilder.author(searchCriteria.author);
+                analytics.indexesUsed.push('author');
+            }
+            if (searchCriteria.tags && searchCriteria.tags.length > 0) {
+                console.log('🏷️ Adding tags filter:', searchCriteria.tags);
+                queryBuilder.tags(searchCriteria.tags);
+                analytics.indexesUsed.push('tags');
+            }
+            if (searchCriteria.excludeTags && searchCriteria.excludeTags.length > 0) {
+                console.log('🚫 Adding exclude tags filter:', searchCriteria.excludeTags);
+                queryBuilder.excludeTags(searchCriteria.excludeTags);
+            }
+            if (searchCriteria.dateRange) {
+                console.log('📅 Adding date range filter:', searchCriteria.dateRange);
+                queryBuilder.dateRange(searchCriteria.dateRange.start, searchCriteria.dateRange.end);
+                analytics.indexesUsed.push('bookmarked_at');
+            }
+            if (searchCriteria.hasMedia !== undefined) {
+                console.log('📷 Adding media filter:', searchCriteria.hasMedia);
+                queryBuilder.hasMedia(searchCriteria.hasMedia);
+            }
+            // STEP 4: Apply sorting and pagination options
+            const sortBy = parsedQuery.sortBy === 'relevance' ? 'created_at' : parsedQuery.sortBy;
+            queryBuilder
+                .sortBy(sortBy || 'created_at', parsedQuery.sortOrder || 'desc')
+                .limit(parsedQuery.limit || limits_Limits.defaultSearchLimit);
+            if (parsedQuery.offset) {
+                queryBuilder.offset(parsedQuery.offset);
+            }
+            console.log('⚡ Executing native Dexie query...');
+            // STEP 5: Execute single optimized native Dexie query
+            const results = await queryBuilder.execute();
+            const queryTime = performance.now() - startTime;
+            analytics.queryTime = queryTime;
+            analytics.resultsReturned = results.length;
+            analytics.indexHits = analytics.indexesUsed.length;
+            console.log(`✅ Native Dexie search completed in ${queryTime.toFixed(2)}ms:`);
+            console.log(`   📊 Results: ${results.length}`);
+            console.log(`   🔍 Indexes used: ${analytics.indexesUsed.join(', ')}`);
+            console.log(`   ⏱️ Query time: ${queryTime.toFixed(2)}ms`);
+            // Log slow operations
+            if (queryTime > this.config.performanceTargets.combinedSearch) {
+                analytics.slowOperations.push(`Native Dexie query: ${queryTime.toFixed(2)}ms`);
+                console.warn(`⚠️ Slow native Dexie query: ${queryTime.toFixed(2)}ms`);
+            }
+            // STEP 6: Convert to SearchResult format (same as original method)
+            const bookmarks = results.map(bookmark => ({
+                bookmark,
+                score: 1, // Will be calculated by relevance scorer
+                matchingFactors: {
+                    textRelevance: 0,
+                    tagRelevance: 0,
+                    recency: 0,
+                    authorPopularity: 0,
+                    userInteraction: 0,
+                    exactMatch: false
+                }
+            }));
+            return {
+                bookmarks,
+                totalCount: bookmarks.length,
+                queryTime,
+                pagination: {
+                    hasMore: false, // TODO: Implement proper pagination detection
+                    totalPages: 1
+                }
+            };
+        }
+        catch (error) {
+            const queryTime = performance.now() - startTime;
+            console.error('❌ Native Dexie search execution error:', error);
+            return {
+                bookmarks: [],
+                totalCount: 0,
+                queryTime,
+                pagination: {
+                    hasMore: false,
+                    totalPages: 0
+                }
+            };
+        }
+    }
+    /**
+     * Convert ParsedQuery to native Dexie search criteria
+     * This bridges the gap between your existing query parser and native Dexie
+     */
+    convertParsedQueryToNativeDexie(parsedQuery) {
+        const criteria = {};
+        // Text search: Convert tokens back to search text
+        if (parsedQuery.textTokens.length > 0) {
+            criteria.text = parsedQuery.textTokens.join(' ');
+        }
+        // Author filter: Extract from filters
+        const authorFilter = parsedQuery.filters?.find(f => f.type === 'author');
+        if (authorFilter) {
+            criteria.author = authorFilter.value;
+        }
+        // Tags: Use required tags
+        if (parsedQuery.requiredTags.length > 0) {
+            criteria.tags = parsedQuery.requiredTags;
+        }
+        // Exclude tags
+        if (parsedQuery.excludedTags.length > 0) {
+            criteria.excludeTags = parsedQuery.excludedTags;
+        }
+        // Date range filter
+        const dateFilter = parsedQuery.filters?.find(f => f.type === 'dateRange');
+        if (dateFilter) {
+            criteria.dateRange = dateFilter.value;
+        }
+        // Media filter
+        const mediaFilter = parsedQuery.filters?.find(f => f.type === 'hasMedia');
+        if (mediaFilter) {
+            criteria.hasMedia = mediaFilter.value;
+        }
+        return criteria;
     }
     /**
      * Execute a single filter using appropriate index
@@ -1698,7 +2192,7 @@ class SearchExecutor {
                 .where('author')
                 .equalsIgnoreCase(author)
                 .reverse()
-                .limit(Limits.indexSearchLimit)
+                .limit(limits_Limits.indexSearchLimit)
                 .toArray();
             console.log(`👤 Found ${results.length} bookmarks by @${author}`);
             return results;
@@ -1718,7 +2212,7 @@ class SearchExecutor {
                 .where('bookmarked_at')
                 .between(dateRange.start, dateRange.end)
                 .reverse()
-                .limit(Limits.substringSearchLimit)
+                .limit(limits_Limits.substringSearchLimit)
                 .toArray();
             console.log(`📅 Found ${results.length} bookmarks in date range ${dateRange.start} to ${dateRange.end}`);
             return results;
@@ -1738,7 +2232,7 @@ class SearchExecutor {
                 .where('textTokens')
                 .anyOfIgnoreCase([token])
                 .reverse()
-                .limit(Limits.indexSearchLimit)
+                .limit(limits_Limits.indexSearchLimit)
                 .toArray();
             console.log(`🔍 Found ${results.length} bookmarks with exact token "${token}"`);
             return results;
@@ -1757,7 +2251,7 @@ class SearchExecutor {
             const allBookmarks = await db.bookmarks
                 .orderBy('created_at')
                 .reverse()
-                .limit(Limits.substringSearchLimit) // Reasonable limit for substring search
+                .limit(limits_Limits.substringSearchLimit) // Reasonable limit for substring search
                 .toArray();
             console.log(`🔍 Searching ${allBookmarks.length} bookmarks with substring logic`);
             // Apply substring filtering with AND logic for multiple tokens
@@ -1840,7 +2334,7 @@ class SearchExecutor {
                     return false;
                 });
             })
-                .limit(Limits.substringSearchLimit) // Reasonable limit
+                .limit(limits_Limits.substringSearchLimit) // Reasonable limit
                 .toArray();
             console.log(`🔍 Dexie multi-column search found ${results.length} matches`);
             return results;
@@ -1861,7 +2355,7 @@ class SearchExecutor {
                 (bookmark.media_urls && bookmark.media_urls.length > 0) :
                 (!bookmark.media_urls || bookmark.media_urls.length === 0))
                 .reverse()
-                .limit(Limits.substringSearchLimit)
+                .limit(limits_Limits.substringSearchLimit)
                 .toArray();
             console.log(`📷 Found ${results.length} bookmarks ${hasMedia ? 'with' : 'without'} media`);
             return results;
@@ -1972,6 +2466,68 @@ class SearchExecutor {
                 return this.config.performanceTargets.combinedSearch;
         }
     }
+    /**
+     * TEST METHOD: Compare old vs new search approaches
+     * This demonstrates the difference between the complex pipeline and native Dexie
+     */
+    async testSearchComparison(testQuery) {
+        console.log('🧪 Testing search comparison with query:', testQuery);
+        // Create a mock ParsedQuery for testing
+        const mockParsedQuery = {
+            textTokens: testQuery.text ? testQuery.text.split(' ') : [],
+            exactPhrases: [],
+            requiredTags: testQuery.tags || [],
+            optionalTags: [],
+            excludedTags: [],
+            filters: testQuery.author ? [{
+                    type: 'author',
+                    value: testQuery.author,
+                    selectivity: 0.6,
+                    estimatedCost: 5
+                }] : [],
+            queryPlan: {
+                primaryFilter: testQuery.author ? {
+                    type: 'author',
+                    value: testQuery.author,
+                    selectivity: 0.6,
+                    estimatedCost: 5
+                } : undefined,
+                secondaryFilters: [],
+                intersectionStrategy: 'all',
+                estimatedResultCount: 0,
+                estimatedExecutionTime: 0
+            },
+            originalQuery: testQuery,
+            limit: testQuery.limit || 20,
+            offset: 0,
+            sortBy: 'created_at',
+            sortOrder: 'desc'
+        };
+        // Test OLD method (complex pipeline)
+        console.log('🔄 Testing OLD search method (complex pipeline)...');
+        const oldStart = performance.now();
+        const oldResult = await this.executeSearch(mockParsedQuery);
+        const oldTime = performance.now() - oldStart;
+        // Test NEW method (native Dexie composable)
+        console.log('🔄 Testing NEW search method (native Dexie composable)...');
+        const newStart = performance.now();
+        const newResult = await this.executeSearchNativeDexie(mockParsedQuery);
+        const newTime = performance.now() - newStart;
+        const improvement = ((oldTime - newTime) / oldTime) * 100;
+        console.log('📊 Search comparison results:');
+        console.log(`   🔴 OLD method: ${oldTime.toFixed(2)}ms (${oldResult.bookmarks.length} results)`);
+        console.log(`   🟢 NEW method: ${newTime.toFixed(2)}ms (${newResult.bookmarks.length} results)`);
+        console.log(`   ⚡ Performance improvement: ${improvement.toFixed(1)}%`);
+        return {
+            oldMethod: oldResult,
+            newMethod: newResult,
+            performance: {
+                oldTime,
+                newTime,
+                improvement
+            }
+        };
+    }
 }
 
 ;// ./src/search/search-engine.ts
@@ -1995,7 +2551,6 @@ class SearchEngine {
     async search(query) {
         const startTime = performance.now();
         try {
-            console.log(`🔍 SearchEngine.search called with:`, query);
             // Generate cache key
             const cacheKey = this.queryParser.generateQueryHash(query);
             // Check cache first (but skip for pagination to avoid stale results)
@@ -2008,10 +2563,9 @@ class SearchEngine {
             }
             // Parse query into optimized execution plan
             const parsedQuery = this.queryParser.parseQuery(query);
-            console.log(`🔍 Parsed query:`, parsedQuery);
-            // Execute search
-            const result = await this.searchExecutor.executeSearch(parsedQuery);
-            console.log(`🔍 SearchEngine result:`, result);
+            // Execute search using NEW native Dexie composable method
+            // OLD: const result = await this.searchExecutor.executeSearch(parsedQuery);
+            const result = await this.searchExecutor.executeSearchNativeDexie(parsedQuery);
             // Add suggested queries
             result.suggestedQueries = this.queryParser.extractSuggestions(query);
             // Cache result if enabled (skip for pagination)
@@ -2039,19 +2593,19 @@ class SearchEngine {
      * Quick tag-only search (optimized for autocomplete)
      */
     async quickTagSearch(tag) {
-        return this.search({ tags: [tag], limit: Limits.quickSearchLimit });
+        return this.search({ tags: [tag], limit: limits_Limits.quickSearchLimit });
     }
     /**
      * Text-only search (for search-as-you-type)
      */
     async quickTextSearch(text) {
-        return this.search({ text, limit: Limits.quickSearchLimit });
+        return this.search({ text, limit: limits_Limits.quickSearchLimit });
     }
     /**
      * Author search
      */
     async searchByAuthor(author) {
-        return this.search({ author, limit: Limits.authorSearchLimit });
+        return this.search({ author, limit: limits_Limits.authorSearchLimit });
     }
     /**
      * Recent bookmarks with optional filters
@@ -2060,7 +2614,7 @@ class SearchEngine {
         return this.search({
             ...filters,
             sortBy: 'date',
-            limit: filters?.limit || Limits.defaultQueryLimit
+            limit: filters?.limit || limits_Limits.defaultQueryLimit
         });
     }
     /**
@@ -2118,8 +2672,8 @@ class SearchEngine {
                 autocomplete: 10 // 10ms
             },
             caching: {
-                enabled: true,
-                maxCacheSize: Limits.cacheSize, // Cache entries from centralized config
+                enabled: false,
+                maxCacheSize: limits_Limits.cacheSize, // Cache entries from centralized config
                 cacheTimeout: 5 * 60 * 1000 // 5 minutes
             },
             textSearch: {
@@ -3791,7 +4345,7 @@ const handleSearchBookmarks = async (query, sendResponse) => {
                 }
                 return true;
             })
-                .slice(0, query.limit || Limits.defaultQueryLimit);
+                .slice(0, query.limit || limits_Limits.defaultQueryLimit);
             console.log(`🔍 Fallback search found ${bookmarks.length} bookmarks`);
             sendResponse({ success: true, result: { results: bookmarks, totalFound: bookmarks.length } });
         }
@@ -4191,13 +4745,13 @@ class InlineExportManager {
         try {
             console.log(`📄 [SW] Generating PDF for ${bookmarks.length} bookmarks`);
             // Limit bookmarks for PDF to prevent hanging
-            const limitedBookmarks = bookmarks.slice(0, Limits.maxBookmarksForExport);
-            if (bookmarks.length > Limits.maxBookmarksForExport) {
-                console.warn(`⚠️ [SW] PDF export limited to ${Limits.maxBookmarksForExport} bookmarks (requested: ${bookmarks.length})`);
+            const limitedBookmarks = bookmarks.slice(0, limits_Limits.maxBookmarksForExport);
+            if (bookmarks.length > limits_Limits.maxBookmarksForExport) {
+                console.warn(`⚠️ [SW] PDF export limited to ${limits_Limits.maxBookmarksForExport} bookmarks (requested: ${bookmarks.length})`);
             }
             // Generate PDF content using a simple text-based format
             // This creates a PDF-like structure that can be opened by PDF viewers
-            const pdfContent = this.generatePDFContent(limitedBookmarks, bookmarks.length > Limits.maxBookmarksForExport);
+            const pdfContent = this.generatePDFContent(limitedBookmarks, bookmarks.length > limits_Limits.maxBookmarksForExport);
             const blob = new Blob([pdfContent], { type: 'application/pdf' });
             return {
                 success: true,
@@ -4424,7 +4978,7 @@ if (typeof self !== 'undefined') {
                 console.error('❌ Database inspection failed:', error);
             }
         },
-        listBookmarks: async (limit = Limits.defaultQueryLimit) => {
+        listBookmarks: async (limit = limits_Limits.defaultQueryLimit) => {
             console.log(`🔍 === Last ${limit} Bookmarks ===`);
             if (!serviceWorker.db) {
                 console.error('❌ Database not initialized');
@@ -4583,7 +5137,7 @@ if (typeof self !== 'undefined') {
                     console.error('❌ Database not initialized');
                     return { success: false, error: 'Database not initialized' };
                 }
-                const result = await serviceWorker.db.getAllBookmarks({ limit: Limits.maxQueryLimit });
+                const result = await serviceWorker.db.getAllBookmarks({ limit: limits_Limits.maxQueryLimit });
                 if (!result.success || !result.data) {
                     console.error('❌ Failed to fetch bookmarks:', result.error);
                     return { success: false, error: result.error };
@@ -4639,7 +5193,7 @@ if (typeof self !== 'undefined') {
                     console.error('❌ Database not initialized');
                     return { success: false, error: 'Database not initialized' };
                 }
-                const result = await serviceWorker.db.getAllBookmarks({ limit: Limits.maxQueryLimit });
+                const result = await serviceWorker.db.getAllBookmarks({ limit: limits_Limits.maxQueryLimit });
                 if (!result.success || !result.data) {
                     return { success: false, error: result.error };
                 }
@@ -4689,7 +5243,7 @@ if (typeof self !== 'undefined') {
         async debugBookmarkDates() {
             try {
                 console.log('🔍 DEBUG: Analyzing bookmark dates...\n');
-                const result = await db.searchBookmarks({ limit: Limits.defaultQueryLimit, sortBy: 'created_at', sortOrder: 'asc' });
+                const result = await db.searchBookmarks({ limit: limits_Limits.defaultQueryLimit, sortBy: 'created_at', sortOrder: 'asc' });
                 if (!result.success || !result.data || result.data.length === 0) {
                     console.log('❌ No bookmarks found or error occurred');
                     return;
@@ -4728,7 +5282,7 @@ if (typeof self !== 'undefined') {
         async validateDateConsistency() {
             try {
                 console.log('🔍 VALIDATION: Checking date consistency...\n');
-                const result = await db.searchBookmarks({ limit: Limits.maxQueryLimit, sortBy: 'created_at', sortOrder: 'asc' });
+                const result = await db.searchBookmarks({ limit: limits_Limits.maxQueryLimit, sortBy: 'created_at', sortOrder: 'asc' });
                 if (!result.success || !result.data) {
                     console.log('❌ Failed to fetch bookmarks for validation');
                     return;
@@ -4802,7 +5356,7 @@ if (typeof self !== 'undefined') {
         async getOldestBookmarkedAt() {
             try {
                 console.log('🔍 OLDEST BY CREATED_AT: Fetching 20 oldest tweets...\n');
-                const result = await db.searchBookmarks({ limit: Limits.popularTagsLimit, sortBy: 'created_at', sortOrder: 'asc' });
+                const result = await db.searchBookmarks({ limit: limits_Limits.popularTagsLimit, sortBy: 'created_at', sortOrder: 'asc' });
                 if (!result.success || !result.data || result.data.length === 0) {
                     console.log('❌ No bookmarks found');
                     return;
@@ -4828,7 +5382,7 @@ if (typeof self !== 'undefined') {
         async getNewestBookmarkedAt() {
             try {
                 console.log('🔍 NEWEST BY CREATED_AT: Fetching 20 newest tweets...\n');
-                const result = await db.searchBookmarks({ limit: Limits.popularTagsLimit, sortBy: 'created_at', sortOrder: 'desc' });
+                const result = await db.searchBookmarks({ limit: limits_Limits.popularTagsLimit, sortBy: 'created_at', sortOrder: 'desc' });
                 if (!result.success || !result.data || result.data.length === 0) {
                     console.log('❌ No bookmarks found');
                     return;
@@ -4854,7 +5408,7 @@ if (typeof self !== 'undefined') {
         async getOldestCreatedAt() {
             try {
                 console.log('🔍 OLDEST BY CREATED_AT: Fetching 20 oldest created tweets...\n');
-                const result = await db.searchBookmarks({ limit: Limits.popularTagsLimit, sortBy: 'created_at', sortOrder: 'asc' });
+                const result = await db.searchBookmarks({ limit: limits_Limits.popularTagsLimit, sortBy: 'created_at', sortOrder: 'asc' });
                 if (!result.success || !result.data || result.data.length === 0) {
                     console.log('❌ No bookmarks found');
                     return;
@@ -4880,7 +5434,7 @@ if (typeof self !== 'undefined') {
         async getNewestCreatedAt() {
             try {
                 console.log('🔍 NEWEST BY CREATED_AT: Fetching 20 newest created tweets...\n');
-                const result = await db.searchBookmarks({ limit: Limits.popularTagsLimit, sortBy: 'created_at', sortOrder: 'desc' });
+                const result = await db.searchBookmarks({ limit: limits_Limits.popularTagsLimit, sortBy: 'created_at', sortOrder: 'desc' });
                 if (!result.success || !result.data || result.data.length === 0) {
                     console.log('❌ No bookmarks found');
                     return;

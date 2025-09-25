@@ -34,7 +34,6 @@ export class SearchEngine {
     const startTime = performance.now();
 
     try {
-      console.log(`🔍 SearchEngine.search called with:`, query);
       
       // Generate cache key
       const cacheKey = this.queryParser.generateQueryHash(query);
@@ -50,11 +49,10 @@ export class SearchEngine {
 
       // Parse query into optimized execution plan
       const parsedQuery = this.queryParser.parseQuery(query);
-      console.log(`🔍 Parsed query:`, parsedQuery);
 
-      // Execute search
-      const result = await this.searchExecutor.executeSearch(parsedQuery);
-      console.log(`🔍 SearchEngine result:`, result);
+      // Execute search using NEW native Dexie composable method
+      // OLD: const result = await this.searchExecutor.executeSearch(parsedQuery);
+      const result = await this.searchExecutor.executeSearchNativeDexie(parsedQuery);
 
       // Add suggested queries
       result.suggestedQueries = this.queryParser.extractSuggestions(query);
@@ -178,7 +176,7 @@ export class SearchEngine {
         autocomplete: 10         // 10ms
       },
       caching: {
-        enabled: true,
+        enabled: false,
         maxCacheSize: Limits.cacheSize,       // Cache entries from centralized config
         cacheTimeout: 5 * 60 * 1000  // 5 minutes
       },

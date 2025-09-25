@@ -23,7 +23,6 @@ export class QueryParser {
    * Parse user search query into optimized execution plan
    */
   parseQuery(query: SearchQuery): ParsedQuery {
-    console.log(`🔍 QueryParser.parseQuery called with:`, query);
     
     const parsed: ParsedQuery = {
       textTokens: [],
@@ -49,7 +48,6 @@ export class QueryParser {
     // Parse text input
     if (query.text) {
       this.parseTextQuery(query.text, parsed);
-      console.log(`🔍 Parsed text tokens:`, parsed.textTokens);
     }
 
     // Build filters
