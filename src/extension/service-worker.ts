@@ -472,6 +472,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       handleSearchBookmarks(request.query, sendResponse);
       return true;
       
+    case "searchAuthors":
+      handleSearchAuthors(request.query, request.limit, sendResponse);
+      return true;
+      
     case "saveBookmark":
       handleSaveBookmark(request.bookmark, sendResponse);
       return true;
@@ -559,6 +563,26 @@ const handleSearchBookmarks = async (query, sendResponse) => {
     }
   } catch (error) {
     console.error('Search error:', error);
+    sendResponse({ success: false, error: error.message });
+  }
+};
+
+const handleSearchAuthors = async (query, limit, sendResponse) => {
+  try {
+    console.log(`👥 Service Worker author search request: "${query}", limit: ${limit}`);
+    await serviceWorker.initialize();
+    
+    if (serviceWorker.searchEngine) {
+      console.log(`👥 Using search engine for author search`);
+      const authors = await serviceWorker.searchEngine.searchAuthors(query || '', limit || 10);
+      console.log(`👥 Found ${authors.length} authors`);
+      sendResponse({ success: true, authors });
+    } else {
+      console.log('👥 Search engine not available for author search');
+      sendResponse({ success: false, error: 'Search engine not available' });
+    }
+  } catch (error) {
+    console.error('👥 Author search error:', error);
     sendResponse({ success: false, error: error.message });
   }
 };

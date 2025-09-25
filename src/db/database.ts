@@ -457,6 +457,78 @@ export class XSavedDatabase extends Dexie {
     }
   }
 
+  /**
+   * Get all unique authors with bookmark count
+   */
+  async getAllAuthors(): Promise<{ author: string; count: number }[]> {
+    try {
+      const authorMap = new Map<string, number>();
+      
+      // Use the author index for efficient grouping
+      await this.bookmarks.orderBy('author').each(bookmark => {
+        const author = bookmark.author;
+        authorMap.set(author, (authorMap.get(author) || 0) + 1);
+      });
+      
+      // Convert to array and sort by count
+      const authors = Array.from(authorMap.entries())
+        .map(([author, count]) => ({ author, count }))
+        .sort((a, b) => b.count - a.count);
+      
+      console.log(`👥 Found ${authors.length} unique authors`);
+      return authors;
+    } catch (error) {
+      console.error('❌ Failed to get all authors:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Search authors by name (for autocomplete)
+   */
+  async searchAuthors(query: string, limit: number = 10): Promise<{ author: string; count: number }[]> {
+    try {
+      if (!query.trim()) {
+        // Return all authors if no query
+        const allAuthors = await this.getAllAuthors();
+        return allAuthors.slice(0, limit);
+      }
+      
+      const queryLower = query.toLowerCase();
+      const authorMap = new Map<string, number>();
+      
+      // Search authors that contain the query string
+      await this.bookmarks
+        .where('author')
+        .startsWithIgnoreCase(query)
+        .each(bookmark => {
+          const author = bookmark.author;
+          authorMap.set(author, (authorMap.get(author) || 0) + 1);
+        });
+      
+      // Also search for authors that contain the query (not just start with)
+      await this.bookmarks.filter(bookmark => 
+        bookmark.author.toLowerCase().includes(queryLower) &&
+        !authorMap.has(bookmark.author)
+      ).each(bookmark => {
+        const author = bookmark.author;
+        authorMap.set(author, (authorMap.get(author) || 0) + 1);
+      });
+      
+      // Convert to array and sort by count
+      const authors = Array.from(authorMap.entries())
+        .map(([author, count]) => ({ author, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, limit);
+      
+      console.log(`🔍 Found ${authors.length} authors matching "${query}"`);
+      return authors;
+    } catch (error) {
+      console.error(`❌ Author search failed for "${query}":`, error);
+      return [];
+    }
+  }
+
   // ========================
   // TAG OPERATIONS
   // ========================

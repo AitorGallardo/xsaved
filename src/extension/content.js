@@ -1094,11 +1094,40 @@ class XSavedContentScript {
 
     const searchBox = document.createElement('input');
     searchBox.type = 'text';
-    searchBox.placeholder = 'Search bookmarks...';
+    searchBox.placeholder = 'Search bookmarks... (use @ for authors)';
     searchBox.className = 'xsaved-search-input';
     searchBox.style.cssText = `
       width: 300px;
+      position: relative;
     `;
+
+    // Create search container to hold input and dropdown
+    const searchContainer = document.createElement('div');
+    searchContainer.style.cssText = `
+      position: relative;
+      display: inline-block;
+    `;
+    
+    // Create author dropdown
+    const authorDropdown = document.createElement('div');
+    authorDropdown.className = 'xsaved-author-dropdown';
+    authorDropdown.style.cssText = `
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      max-height: 300px;
+      background: rgb(15, 23, 42);
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      border-radius: 8px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+      z-index: 10001;
+      overflow-y: auto;
+      display: none;
+    `;
+
+    searchContainer.appendChild(searchBox);
+    searchContainer.appendChild(authorDropdown);
 
     // Sort button
     const sortButton = document.createElement('button');
@@ -1166,7 +1195,7 @@ class XSavedContentScript {
       this.showExportDialog(this.allBookmarks || []);
     });
 
-    rightSide.appendChild(searchBox);
+    rightSide.appendChild(searchContainer);
     rightSide.appendChild(sortButton);
     rightSide.appendChild(downloadButton);
 
@@ -1200,11 +1229,144 @@ class XSavedContentScript {
     container.appendChild(contentContainer);
     contentContainer.appendChild(grid);
 
-    // Add search functionality with debouncing
+    // Add enhanced search functionality with @ author support
     let searchTimeout;
+    let authorSearchTimeout;
+    let selectedAuthorIndex = -1;
+    let currentAuthors = [];
+    
+    const showAuthorDropdown = async (query = '') => {
+      try {
+        const response = await chrome.runtime.sendMessage({
+          action: 'searchAuthors',
+          query: query,
+          limit: 10
+        });
+        
+        if (response && response.success) {
+          currentAuthors = response.authors;
+          renderAuthorDropdown(currentAuthors);
+          authorDropdown.style.display = 'block';
+          selectedAuthorIndex = -1;
+        } else {
+          console.error('❌ Author search failed:', response?.error);
+        }
+      } catch (error) {
+        console.error('❌ Author search error:', error);
+      }
+    };
+    
+    const hideAuthorDropdown = () => {
+      authorDropdown.style.display = 'none';
+      selectedAuthorIndex = -1;
+      currentAuthors = [];
+    };
+    
+    const renderAuthorDropdown = (authors) => {
+      authorDropdown.innerHTML = '';
+      
+      if (authors.length === 0) {
+        const noResults = document.createElement('div');
+        noResults.textContent = 'No authors found';
+        noResults.style.cssText = `
+          padding: 12px 16px;
+          color: rgba(148, 163, 184, 0.7);
+          font-style: italic;
+        `;
+        authorDropdown.appendChild(noResults);
+        return;
+      }
+      
+      authors.forEach((authorData, index) => {
+        const item = document.createElement('div');
+        item.className = 'author-dropdown-item';
+        item.style.cssText = `
+          padding: 12px 16px;
+          cursor: pointer;
+          border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+          transition: background-color 0.15s ease;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        `;
+        
+        item.innerHTML = `
+          <span style="color: rgb(229, 231, 235); font-weight: 500;">@${authorData.author}</span>
+          <span style="color: rgba(148, 163, 184, 0.7); font-size: 12px;">${authorData.count} tweets</span>
+        `;
+        
+        item.addEventListener('mouseenter', () => {
+          item.style.backgroundColor = 'rgba(59, 130, 246, 0.2)';
+          selectedAuthorIndex = index;
+          updateDropdownSelection();
+        });
+        
+        item.addEventListener('mouseleave', () => {
+          item.style.backgroundColor = 'transparent';
+        });
+        
+        item.addEventListener('click', () => {
+          selectAuthor(authorData.author);
+        });
+        
+        authorDropdown.appendChild(item);
+      });
+    };
+    
+    const updateDropdownSelection = () => {
+      const items = authorDropdown.querySelectorAll('.author-dropdown-item');
+      items.forEach((item, index) => {
+        if (index === selectedAuthorIndex) {
+          item.style.backgroundColor = 'rgba(59, 130, 246, 0.3)';
+        } else {
+          item.style.backgroundColor = 'transparent';
+        }
+      });
+    };
+    
+    const selectAuthor = (author) => {
+      const currentValue = searchBox.value;
+      const atIndex = currentValue.lastIndexOf('@');
+      if (atIndex !== -1) {
+        // Replace the @ and everything after it with the selected author
+        searchBox.value = currentValue.substring(0, atIndex) + `@${author}`;
+      } else {
+        // Just append the author
+        searchBox.value = `@${author}`;
+      }
+      
+      hideAuthorDropdown();
+      searchBox.focus();
+      
+      // Trigger search for the selected author
+      this.filterBookmarksByAuthor(author, container);
+    };
+    
     searchBox.addEventListener('input', (e) => {
       const query = e.target.value;
       console.log(`🔍 Search input event fired: "${query}"`);
+      
+      // Check if user typed @ symbol
+      const atIndex = query.lastIndexOf('@');
+      if (atIndex !== -1) {
+        // Extract text after the last @
+        const afterAt = query.substring(atIndex + 1);
+        console.log(`👥 @ detected, searching authors with: "${afterAt}"`);
+        
+        // Clear previous timeout
+        if (authorSearchTimeout) {
+          clearTimeout(authorSearchTimeout);
+        }
+        
+        // Debounce author search
+        authorSearchTimeout = setTimeout(() => {
+          showAuthorDropdown(afterAt);
+        }, 200);
+        
+        return; // Don't trigger regular search while showing author dropdown
+      } else {
+        hideAuthorDropdown();
+      }
       
       // Clear previous timeout
       if (searchTimeout) {
@@ -1216,6 +1378,40 @@ class XSavedContentScript {
         console.log(`🔍 Debounced search triggered for: "${query}"`);
         this.filterBookmarksPage(query, container, this.allBookmarks || []);
       }, 300); // 300ms delay
+    });
+    
+    searchBox.addEventListener('keydown', (e) => {
+      if (authorDropdown.style.display === 'block') {
+        switch (e.key) {
+          case 'ArrowDown':
+            e.preventDefault();
+            selectedAuthorIndex = Math.min(selectedAuthorIndex + 1, currentAuthors.length - 1);
+            updateDropdownSelection();
+            break;
+          case 'ArrowUp':
+            e.preventDefault();
+            selectedAuthorIndex = Math.max(selectedAuthorIndex - 1, 0);
+            updateDropdownSelection();
+            break;
+          case 'Enter':
+            e.preventDefault();
+            if (selectedAuthorIndex >= 0 && selectedAuthorIndex < currentAuthors.length) {
+              selectAuthor(currentAuthors[selectedAuthorIndex].author);
+            }
+            break;
+          case 'Escape':
+            e.preventDefault();
+            hideAuthorDropdown();
+            break;
+        }
+      }
+    });
+    
+    // Click outside to close dropdown
+    document.addEventListener('click', (e) => {
+      if (!searchContainer.contains(e.target)) {
+        hideAuthorDropdown();
+      }
     });
 
     console.log('✅ Layout rendered');
@@ -2602,6 +2798,34 @@ class XSavedContentScript {
     
     // Scroll to top after search/filtering
     this.scrollToTopOfGrid();
+  }
+
+  /**
+   * Filter bookmarks by author using database search
+   */
+  filterBookmarksByAuthor(author, container) {
+    console.log(`👤 Filtering by author: @${author}`);
+    
+    // Create author search query with current sorting
+    const searchQuery = {
+      author: author,
+      limit: PAGINATION_CONFIG.INITIAL_LOAD,
+      offset: 0,
+      sortBy: this.currentSort?.field || 'created_at',
+      sortOrder: this.currentSort?.order || 'desc'
+    };
+    
+    console.log(`👤 Author search query:`, searchQuery);
+    
+    // Reset pagination and search
+    this.resetPagination();
+    this.pagination.currentQuery = searchQuery;
+    
+    // Scroll to top of grid when searching
+    this.scrollToTopOfGrid();
+    
+    // Load search results with pagination - use append=false to replace results
+    this.loadBookmarksPage(container, searchQuery, false);
   }
 
   setupBookmarksPageObserver() {

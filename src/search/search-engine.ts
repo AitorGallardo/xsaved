@@ -96,10 +96,32 @@ export class SearchEngine {
   }
 
   /**
-   * Author search
+   * Author search (search bookmarks by author)
    */
   async searchByAuthor(author: string): Promise<SearchResult> {
     return this.search({ author, limit: Limits.authorSearchLimit });
+  }
+
+  /**
+   * Search authors for autocomplete dropdown
+   */
+  async searchAuthors(query: string = '', limit: number = 10): Promise<{ author: string; count: number }[]> {
+    try {
+      // Import db from the db module like search executor does
+      const { db } = await import('../db');
+      
+      // Ensure database is initialized
+      await db.initialize();
+      
+      // Use the database method we already created
+      const authors = await db.searchAuthors(query, limit);
+      console.log(`🔍 SearchEngine found ${authors.length} authors for query: "${query}"`);
+      
+      return authors;
+    } catch (error) {
+      console.error('❌ SearchEngine author search failed:', error);
+      return [];
+    }
   }
 
   /**
