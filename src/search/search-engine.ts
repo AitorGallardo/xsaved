@@ -105,7 +105,7 @@ export class SearchEngine {
   /**
    * Search authors for autocomplete dropdown
    */
-  async searchAuthors(query: string = '', limit: number = 10): Promise<{ author: string; count: number }[]> {
+  async searchAuthors(query: string = '', limit: number = 10): Promise<{ author: string; count: number; avatar_url?: string }[]> {
     try {
       // Import db from the db module like search executor does
       const { db } = await import('../db');

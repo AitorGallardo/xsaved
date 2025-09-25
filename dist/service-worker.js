@@ -585,13 +585,40 @@ class XSavedDatabase extends import_wrapper_prod {
         }
     }
     /**
+     * Get all unique authors with bookmark count and avatar URLs
+     */
+    async getAllAuthorsWithAvatars() {
+        try {
+            const authorMap = new Map();
+            // Use the author index for efficient grouping
+            await this.bookmarks.orderBy('author').each(bookmark => {
+                const author = bookmark.author;
+                const existing = authorMap.get(author);
+                authorMap.set(author, {
+                    count: (existing?.count || 0) + 1,
+                    avatar_url: existing?.avatar_url || bookmark.avatar_url
+                });
+            });
+            // Convert to array and sort by count
+            const authors = Array.from(authorMap.entries())
+                .map(([author, data]) => ({ author, count: data.count, avatar_url: data.avatar_url }))
+                .sort((a, b) => b.count - a.count);
+            console.log(`👥 Found ${authors.length} unique authors with avatars`);
+            return authors;
+        }
+        catch (error) {
+            console.error('❌ Failed to get all authors with avatars:', error);
+            return [];
+        }
+    }
+    /**
      * Search authors by name (for autocomplete)
      */
     async searchAuthors(query, limit = 10) {
         try {
             if (!query.trim()) {
                 // Return all authors if no query
-                const allAuthors = await this.getAllAuthors();
+                const allAuthors = await this.getAllAuthorsWithAvatars();
                 return allAuthors.slice(0, limit);
             }
             const queryLower = query.toLowerCase();
@@ -602,17 +629,25 @@ class XSavedDatabase extends import_wrapper_prod {
                 .startsWithIgnoreCase(query)
                 .each(bookmark => {
                 const author = bookmark.author;
-                authorMap.set(author, (authorMap.get(author) || 0) + 1);
+                const existing = authorMap.get(author);
+                authorMap.set(author, {
+                    count: (existing?.count || 0) + 1,
+                    avatar_url: existing?.avatar_url || bookmark.avatar_url
+                });
             });
             // Also search for authors that contain the query (not just start with)
             await this.bookmarks.filter(bookmark => bookmark.author.toLowerCase().includes(queryLower) &&
                 !authorMap.has(bookmark.author)).each(bookmark => {
                 const author = bookmark.author;
-                authorMap.set(author, (authorMap.get(author) || 0) + 1);
+                const existing = authorMap.get(author);
+                authorMap.set(author, {
+                    count: (existing?.count || 0) + 1,
+                    avatar_url: existing?.avatar_url || bookmark.avatar_url
+                });
             });
             // Convert to array and sort by count
             const authors = Array.from(authorMap.entries())
-                .map(([author, count]) => ({ author, count }))
+                .map(([author, data]) => ({ author, count: data.count, avatar_url: data.avatar_url }))
                 .sort((a, b) => b.count - a.count)
                 .slice(0, limit);
             console.log(`🔍 Found ${authors.length} authors matching "${query}"`);

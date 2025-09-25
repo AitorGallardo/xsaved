@@ -1092,20 +1092,19 @@ class XSavedContentScript {
       flex-shrink: 0;
     `;
 
+    // Create search container (revert to original)
+    const searchContainer = document.createElement('div');
+    searchContainer.style.cssText = `
+      position: relative;
+      display: inline-block;
+    `;
+
     const searchBox = document.createElement('input');
     searchBox.type = 'text';
     searchBox.placeholder = 'Search bookmarks... (use @ for authors)';
     searchBox.className = 'xsaved-search-input';
     searchBox.style.cssText = `
       width: 300px;
-      position: relative;
-    `;
-
-    // Create search container to hold input and dropdown
-    const searchContainer = document.createElement('div');
-    searchContainer.style.cssText = `
-      position: relative;
-      display: inline-block;
     `;
     
     // Create author dropdown
@@ -1159,7 +1158,7 @@ class XSavedContentScript {
 
     sortButton.addEventListener('click', () => {
       console.log('🔄 Sort button clicked');
-      this.showSortMenu(sortButton, this.allBookmarks || []);
+      this.showSortMenuWithFilters(sortButton, executeSearch);
     });
 
     // Download button
@@ -1229,11 +1228,135 @@ class XSavedContentScript {
     container.appendChild(contentContainer);
     contentContainer.appendChild(grid);
 
-    // Add enhanced search functionality with @ author support
+    // Filter state management (separate from search text)
+    let activeFilters = []; // [{type: 'author', value: 'username', label: '@username'}]
     let searchTimeout;
     let authorSearchTimeout;
     let selectedAuthorIndex = -1;
     let currentAuthors = [];
+    
+    // Filter management functions
+    const addFilter = (type, value, label, avatarUrl) => {
+      // For simplicity, only allow one filter at a time
+      activeFilters = [{ type, value, label, avatarUrl }];
+      updateSearchBoxForFilters();
+      executeSearch();
+    };
+    
+    const removeFilter = (filterToRemove) => {
+      activeFilters = [];
+      updateSearchBoxForFilters();
+      executeSearch();
+    };
+    
+    const clearAllFilters = () => {
+      activeFilters = [];
+      updateSearchBoxForFilters();
+      executeSearch();
+    };
+    
+    const updateSearchBoxForFilters = () => {
+      if (activeFilters.length > 0) {
+        // Block editing and show filter as value
+        const filter = activeFilters[0]; // Just take the first one for simplicity
+        
+        // Clear any existing avatar
+        const existingAvatar = searchContainer.querySelector('.filter-avatar');
+        if (existingAvatar) {
+          existingAvatar.remove();
+        }
+        
+        // Add avatar if available
+        if (filter.avatarUrl) {
+          const avatar = document.createElement('img');
+          avatar.src = filter.avatarUrl;
+          avatar.className = 'filter-avatar';
+          avatar.style.cssText = `
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            z-index: 1;
+          `;
+          
+          // Handle broken images
+          avatar.onerror = () => {
+            avatar.style.display = 'none';
+          };
+          
+          searchContainer.appendChild(avatar);
+          
+          // Adjust search box padding to make room for avatar
+          searchBox.style.paddingLeft = '36px';
+        } else {
+          searchBox.style.paddingLeft = '';
+        }
+        
+        searchBox.value = filter.label + ' (click to remove)';
+        searchBox.readOnly = true;
+        searchBox.style.color = '#60A5FA';
+        searchBox.style.cursor = 'pointer';
+        
+        // Add remove functionality on click
+        searchBox.onclick = () => {
+          removeFilter(filter);
+        };
+      } else {
+        // Remove avatar if it exists
+        const existingAvatar = searchContainer.querySelector('.filter-avatar');
+        if (existingAvatar) {
+          existingAvatar.remove();
+        }
+        
+        // Restore normal editing
+        searchBox.value = '';
+        searchBox.readOnly = false;
+        searchBox.style.color = 'white';
+        searchBox.style.cursor = 'text';
+        searchBox.style.paddingLeft = '8px';
+        searchBox.placeholder = 'Search bookmarks... (use @ for authors)';
+        searchBox.onclick = null;
+      }
+    };
+    
+    const executeSearch = () => {
+      // Create search query
+      const searchQuery = {
+        limit: PAGINATION_CONFIG.INITIAL_LOAD,
+        offset: 0,
+        sortBy: this.currentSort?.field || 'created_at',
+        sortOrder: this.currentSort?.order || 'desc'
+      };
+      
+      if (activeFilters.length > 0) {
+        // Filter mode - only use filter, ignore text
+        const filter = activeFilters[0];
+        if (filter.type === 'author') {
+          searchQuery.author = filter.value;
+        }
+        console.log(`🔍 Filter search query:`, searchQuery);
+      } else {
+        // Normal text search mode
+        const searchText = searchBox.value.trim();
+        if (searchText) {
+          searchQuery.text = searchText;
+        }
+        console.log(`🔍 Text search query:`, searchQuery);
+      }
+      
+      // Reset pagination and search
+      this.resetPagination();
+      this.pagination.currentQuery = searchQuery;
+      
+      // Scroll to top of grid when searching
+      this.scrollToTopOfGrid();
+      
+      // Load search results
+      this.loadBookmarksPage(container, searchQuery, false);
+    };
     
     const showAuthorDropdown = async (query = '') => {
       try {
@@ -1286,14 +1409,42 @@ class XSavedContentScript {
           border-bottom: 1px solid rgba(148, 163, 184, 0.1);
           transition: background-color 0.15s ease;
           display: flex;
-          justify-content: space-between;
           align-items: center;
+          gap: 12px;
         `;
         
-        item.innerHTML = `
+        // Create avatar image
+        const avatar = document.createElement('img');
+        avatar.src = authorData.avatar_url || '';
+        avatar.style.cssText = `
+          width: 24px;
+          height: 24px;
+          border-radius: 50%;
+          flex-shrink: 0;
+          background: rgba(148, 163, 184, 0.3);
+        `;
+        
+        // Handle missing or broken avatars
+        avatar.onerror = () => {
+          avatar.style.display = 'none';
+        };
+        
+        // Create content container
+        const content = document.createElement('div');
+        content.style.cssText = `
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          flex: 1;
+        `;
+        
+        content.innerHTML = `
           <span style="color: rgb(229, 231, 235); font-weight: 500;">@${authorData.author}</span>
           <span style="color: rgba(148, 163, 184, 0.7); font-size: 12px;">${authorData.count} tweets</span>
         `;
+        
+        item.appendChild(avatar);
+        item.appendChild(content);
         
         item.addEventListener('mouseenter', () => {
           item.style.backgroundColor = 'rgba(59, 130, 246, 0.2)';
@@ -1306,7 +1457,7 @@ class XSavedContentScript {
         });
         
         item.addEventListener('click', () => {
-          selectAuthor(authorData.author);
+          selectAuthor(authorData.author, authorData.avatar_url);
         });
         
         authorDropdown.appendChild(item);
@@ -1324,25 +1475,28 @@ class XSavedContentScript {
       });
     };
     
-    const selectAuthor = (author) => {
+    const selectAuthor = (author, avatarUrl) => {
+      // Clear the @ from search input if it exists
       const currentValue = searchBox.value;
       const atIndex = currentValue.lastIndexOf('@');
       if (atIndex !== -1) {
-        // Replace the @ and everything after it with the selected author
-        searchBox.value = currentValue.substring(0, atIndex) + `@${author}`;
-      } else {
-        // Just append the author
-        searchBox.value = `@${author}`;
+        // Remove the @ and everything after it
+        searchBox.value = currentValue.substring(0, atIndex).trim();
       }
+      
+      // Add author as a filter with avatar URL
+      addFilter('author', author, `@${author}`, avatarUrl);
       
       hideAuthorDropdown();
       searchBox.focus();
-      
-      // Trigger search for the selected author
-      this.filterBookmarksByAuthor(author, container);
     };
     
     searchBox.addEventListener('input', (e) => {
+      // Don't process input if in filter mode (readonly)
+      if (searchBox.readOnly) {
+        return;
+      }
+      
       const query = e.target.value;
       console.log(`🔍 Search input event fired: "${query}"`);
       
@@ -1376,7 +1530,7 @@ class XSavedContentScript {
       // Debounce search to avoid excessive calls
       searchTimeout = setTimeout(() => {
         console.log(`🔍 Debounced search triggered for: "${query}"`);
-        this.filterBookmarksPage(query, container, this.allBookmarks || []);
+        executeSearch();
       }, 300); // 300ms delay
     });
     
@@ -1396,7 +1550,8 @@ class XSavedContentScript {
           case 'Enter':
             e.preventDefault();
             if (selectedAuthorIndex >= 0 && selectedAuthorIndex < currentAuthors.length) {
-              selectAuthor(currentAuthors[selectedAuthorIndex].author);
+              const selectedAuthor = currentAuthors[selectedAuthorIndex];
+              selectAuthor(selectedAuthor.author, selectedAuthor.avatar_url);
             }
             break;
           case 'Escape':
@@ -2008,6 +2163,116 @@ class XSavedContentScript {
         this.currentSort = { field: fieldInfo.field, order: newOrder };
         
         this.applySorting(sortValue, bookmarks);
+        sortMenu.remove();
+      });
+
+      sortMenu.appendChild(menuItem);
+    });
+
+    // Position menu relative to sort button
+    sortButton.style.position = 'relative';
+    sortButton.appendChild(sortMenu);
+
+    // Close menu when clicking outside
+    setTimeout(() => {
+      const handleOutsideClick = (e) => {
+        if (!sortMenu.contains(e.target) && !sortButton.contains(e.target)) {
+          sortMenu.remove();
+          document.removeEventListener('click', handleOutsideClick);
+        }
+      };
+      document.addEventListener('click', handleOutsideClick);
+    }, 100);
+  }
+
+  /**
+   * Show sort menu dropdown with filter support
+   * @param {Element} sortButton - The sort button element
+   * @param {Function} executeSearch - The executeSearch function from filter scope
+   */
+  showSortMenuWithFilters(sortButton, executeSearch) {
+    // Remove existing sort menu if any
+    const existingMenu = document.getElementById('xsaved-sort-menu');
+    if (existingMenu) {
+      existingMenu.remove();
+      return; // Toggle behavior - close if already open
+    }
+
+    // Track current sort state
+    this.currentSort = this.currentSort || { field: 'created_at', order: 'desc' };
+
+    // Create sort menu
+    const sortMenu = document.createElement('div');
+    sortMenu.id = 'xsaved-sort-menu';
+    sortMenu.style.cssText = `
+      position: absolute;
+      top: 100%;
+      right: 0;
+      background: #15202b;
+      border: 1px solid #38444d;
+      border-radius: 8px;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+      z-index: 10002;
+      min-width: 180px;
+      margin-top: 8px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    `;
+
+    const sortFields = [
+      { field: 'created_at', label: 'Created At' },
+      // TODO: Add bookmarked at when we have it properly fixed
+      ];
+
+    sortFields.forEach((fieldInfo, index) => {
+      const menuItem = document.createElement('div');
+      const isActive = this.currentSort.field === fieldInfo.field;
+      const currentOrder = isActive ? this.currentSort.order : 'desc';
+      const arrow = currentOrder === 'desc' ? '↓' : '↑';
+      
+      menuItem.style.cssText = `
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        color: ${isActive ? '#3B82F6' : 'white'};
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+        border-bottom: ${index < sortFields.length - 1 ? '1px solid #38444d' : 'none'};
+        background-color: ${isActive ? 'rgba(59, 130, 246, 0.1)' : 'transparent'};
+      `;
+
+      menuItem.innerHTML = `
+        <span style="font-size: 14px; font-weight: ${isActive ? '600' : '500'};">${fieldInfo.label}</span>
+        <span style="font-size: 16px; font-weight: bold; margin-left: 8px;">${arrow}</span>
+      `;
+
+      menuItem.addEventListener('mouseenter', () => {
+        if (!isActive) {
+          menuItem.style.backgroundColor = '#1a3a4a';
+        }
+      });
+
+      menuItem.addEventListener('mouseleave', () => {
+        menuItem.style.backgroundColor = isActive ? 'rgba(59, 130, 246, 0.1)' : 'transparent';
+      });
+
+      menuItem.addEventListener('click', () => {
+        // If clicking the same field, toggle order; if different field, use desc
+        let newOrder;
+        if (this.currentSort.field === fieldInfo.field) {
+          newOrder = this.currentSort.order === 'desc' ? 'asc' : 'desc';
+        } else {
+          newOrder = 'desc'; // Default to desc for new field
+        }
+        
+        console.log('🔄 Sort option selected:', `${fieldInfo.field}-${newOrder}`);
+        
+        // Update current sort state
+        this.currentSort = { field: fieldInfo.field, order: newOrder };
+        
+        // Use the new executeSearch function to preserve filters
+        executeSearch();
+        
         sortMenu.remove();
       });
 
@@ -2800,33 +3065,6 @@ class XSavedContentScript {
     this.scrollToTopOfGrid();
   }
 
-  /**
-   * Filter bookmarks by author using database search
-   */
-  filterBookmarksByAuthor(author, container) {
-    console.log(`👤 Filtering by author: @${author}`);
-    
-    // Create author search query with current sorting
-    const searchQuery = {
-      author: author,
-      limit: PAGINATION_CONFIG.INITIAL_LOAD,
-      offset: 0,
-      sortBy: this.currentSort?.field || 'created_at',
-      sortOrder: this.currentSort?.order || 'desc'
-    };
-    
-    console.log(`👤 Author search query:`, searchQuery);
-    
-    // Reset pagination and search
-    this.resetPagination();
-    this.pagination.currentQuery = searchQuery;
-    
-    // Scroll to top of grid when searching
-    this.scrollToTopOfGrid();
-    
-    // Load search results with pagination - use append=false to replace results
-    this.loadBookmarksPage(container, searchQuery, false);
-  }
 
   setupBookmarksPageObserver() {
     // Observe for dynamic content changes on bookmarks page
