@@ -1540,8 +1540,8 @@ class NativeDexieQueryBuilder {
                 const authorMatch = bookmark.author.toLowerCase().includes(searchTermLower);
                 // Enhanced text matching: try both textTokens and full text field
                 let textMatch = false;
-                // IMPORTANT: This is disabled because it's not working as expected
-                // IMPORTANT: WE CHECKED AND IT LOOKS LIKE LOOKING DIRECTLY TO TEXT WORKS JUST FINE. SO EXT TOKEN MATCHING IS NOT NEEDED RIGHT NOW.
+                // >>IMPORTANT: This is disabled because it's not working as expected
+                // >>IMPORTANT: WE CHECKED AND IT LOOKS LIKE LOOKING DIRECTLY TO TEXT WORKS JUST FINE. SO EXT TOKEN MATCHING IS NOT NEEDED RIGHT NOW.
                 // It's causing the query to return no results
                 // if (bookmark.textTokens?.length > 0) {
                 //   // Fast path: check textTokens for exact matches
@@ -1821,7 +1821,11 @@ class SearchExecutor {
         this.config = config;
     }
     /**
-     * Execute multi-criteria search query
+     *
+     * OLD: Multi-criteria search method (legacy)
+     * NOTE: This was our original search pipeline, but it was complex and relied on multi-stage filter intersections.
+     * We've since replaced it with a native Dexie composable query builder, which is much simpler and more efficient.
+     * Keeping this for reference and fallback, but prefer executeSearchNativeDexie().
      */
     async executeSearch(parsedQuery) {
         const startTime = performance.now();
@@ -1834,59 +1838,49 @@ class SearchExecutor {
             indexesUsed: []
         };
         try {
-            // Ensure database is ready
+            // This method required running a primary filter, then intersecting with secondary filters,
+            // then doing text search and exclusions in-memory. It was hard to maintain and not optimal for performance.
+            // See executeSearchNativeDexie for the new approach.
             await db.initialize();
-            // Execute primary filter first (most selective)
             let candidateBookmarks = [];
             if (parsedQuery.queryPlan.primaryFilter) {
                 candidateBookmarks = await this.executeSingleFilter(parsedQuery.queryPlan.primaryFilter, analytics);
             }
             else {
-                // No filters - get recent bookmarks as starting point
-                const sortBy = 'created_at'; // Always use created_at
+                const sortBy = 'created_at';
                 const recentResult = await db.getRecentBookmarks({
                     limit: parsedQuery.limit || limits_Limits.defaultSearchLimit,
                     sortBy: sortBy,
-                    offset: parsedQuery.offset // CRITICAL FIX: Pass the offset for pagination!
+                    offset: parsedQuery.offset
                 });
                 candidateBookmarks = recentResult.data || [];
                 analytics.indexesUsed.push(sortBy);
             }
-            // Apply secondary filters
             for (const filter of parsedQuery.queryPlan.secondaryFilters) {
                 candidateBookmarks = await this.applyFilter(candidateBookmarks, filter, analytics);
-                // Early termination if too few results
-                if (candidateBookmarks.length === 0) {
+                if (candidateBookmarks.length === 0)
                     break;
-                }
             }
-            // Apply text search if present
             if (parsedQuery.textTokens.length > 0) {
                 if (candidateBookmarks.length === 0) {
-                    // No candidates from primary filter, do substring search directly
                     candidateBookmarks = await this.searchBySubstring(parsedQuery.textTokens, analytics);
                 }
                 else {
-                    // Apply substring filtering to existing candidates
                     candidateBookmarks = await this.applySubstringFilter(candidateBookmarks, parsedQuery.textTokens, analytics);
                 }
             }
-            // Filter out excluded tags
             if (parsedQuery.excludedTags.length > 0) {
                 candidateBookmarks = candidateBookmarks.filter(bookmark => !parsedQuery.excludedTags.some(excludedTag => bookmark.tags.includes(excludedTag)));
             }
             const queryTime = performance.now() - startTime;
             analytics.queryTime = queryTime;
             analytics.resultsReturned = candidateBookmarks.length;
-            // Apply final sorting
             if (parsedQuery.sortBy && parsedQuery.sortBy !== 'relevance') {
                 candidateBookmarks = this.applySorting(candidateBookmarks, parsedQuery.sortBy, parsedQuery.sortOrder);
             }
-            // Apply limit after sorting
             if (parsedQuery.limit && candidateBookmarks.length > parsedQuery.limit) {
                 candidateBookmarks = candidateBookmarks.slice(0, parsedQuery.limit);
             }
-            // Log slow operations
             if (queryTime > this.config.performanceTargets.combinedSearch) {
                 analytics.slowOperations.push(`Total query: ${queryTime.toFixed(2)}ms`);
                 console.warn(`⚠️ Slow search query: ${queryTime.toFixed(2)}ms`, parsedQuery);
@@ -1894,7 +1888,7 @@ class SearchExecutor {
             return {
                 bookmarks: candidateBookmarks.map(bookmark => ({
                     bookmark,
-                    score: 1, // Will be calculated by relevance scorer
+                    score: 1,
                     matchingFactors: {
                         textRelevance: 0,
                         tagRelevance: 0,

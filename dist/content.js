@@ -2488,6 +2488,9 @@ class XSavedContentScript {
     this.resetPagination();
     this.pagination.currentQuery = searchQuery;
     
+    // Scroll to top of grid when searching
+    this.scrollToTopOfGrid();
+    
     // Load search results with pagination - use append=false to replace results
     this.loadBookmarksPage(container, searchQuery, false);
     
