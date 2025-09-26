@@ -1283,56 +1283,82 @@ class XSavedContentScript {
     grid.className = 'grid';
     grid.id = 'xsaved-bookmarks-grid';
     
+    // Card size constraints
+    const CARD_SIZES = {
+      MIN_WIDTH: 160,    // Minimum card width
+      MAX_WIDTH: 280,    // Maximum card width  
+      IDEAL_WIDTH: 220,  // Preferred card width
+    };
+
     // Apply responsive grid based on viewport width
     const updateGridLayout = () => {
-      const viewportWidth = window.innerWidth - 16; // Account for content padding
-      let columns, gap, padding;
+      // Get actual available width accounting for all padding/margins
+      const contentPadding = 16; // 8px on each side from contentContainer
+      const viewportWidth = window.innerWidth;
+      const availableWidth = viewportWidth - contentPadding;
       
-      // Calculate optimal columns and sizing
-      if (viewportWidth <= 480) {
-        // Mobile: Always exactly 2 columns
+      let columns, gap;
+      
+      console.log(`🔍 Debug: viewport=${viewportWidth}px, available=${availableWidth}px`);
+      
+      // Mobile constraint: ≤640px always shows exactly 2 columns
+      if (viewportWidth <= 640) {
         columns = 2;
-        gap = '2px';
-        padding = '0 2px';
-      } else if (viewportWidth <= 768) {
-        // Tablet: 2-3 columns based on space
-        const idealCardWidth = 200;
-        columns = Math.max(2, Math.floor((viewportWidth + 3) / (idealCardWidth + 3)));
-        gap = '3px';
-        padding = '0 3px';
-      } else if (viewportWidth <= 1200) {
-        // Desktop small: 3-5 columns
-        const idealCardWidth = 220;
-        columns = Math.max(3, Math.floor((viewportWidth + 4) / (idealCardWidth + 4)));
-        gap = '4px';
-        padding = '0 4px';
-      } else if (viewportWidth <= 1600) {
-        // Desktop medium: 4-6 columns
-        const idealCardWidth = 240;
-        columns = Math.max(4, Math.floor((viewportWidth + 5) / (idealCardWidth + 5)));
-        gap = '5px';
-        padding = '0 5px';
+        gap = 2;
+        console.log(`📱 Mobile mode: ${columns} columns, ${gap}px gap`);
       } else {
-        // Desktop large: 5-8 columns
-        const idealCardWidth = 250;
-        columns = Math.max(5, Math.floor((viewportWidth + 6) / (idealCardWidth + 6)));
-        gap = '6px';
-        padding = '0 6px';
+        // Calculate optimal columns for larger screens
+        // Start with ideal width and adjust based on constraints
+        let testColumns = Math.floor(availableWidth / CARD_SIZES.IDEAL_WIDTH);
+        
+        // Ensure minimum 2 columns
+        testColumns = Math.max(2, testColumns);
+        
+        // Initialize gap for calculations (will be set properly later)
+        gap = 4; // Default gap for calculations
+        
+        // Calculate actual card width with this column count
+        let actualCardWidth = (availableWidth - (gap * (testColumns - 1))) / testColumns;
+        
+        // If cards would be too wide, increase columns
+        while (actualCardWidth > CARD_SIZES.MAX_WIDTH && testColumns < 8) {
+          testColumns++;
+          actualCardWidth = (availableWidth - (gap * (testColumns - 1))) / testColumns;
+        }
+        
+        // If cards would be too narrow, decrease columns
+        while (actualCardWidth < CARD_SIZES.MIN_WIDTH && testColumns > 2) {
+          testColumns--;
+          actualCardWidth = (availableWidth - (gap * (testColumns - 1))) / testColumns;
+        }
+        
+        columns = testColumns;
+        
+        // Progressive gap sizing based on screen width
+        if (availableWidth <= 768) {
+          gap = 3;
+        } else if (availableWidth <= 1200) {
+          gap = 4;
+        } else if (availableWidth <= 1600) {
+          gap = 5;
+        } else {
+          gap = 6;
+        }
       }
       
-      // Use exact column count to eliminate gaps
-      const gridColumns = `repeat(${columns}, 1fr)`;
-      
+      // Apply the calculated layout with !important to override any conflicting CSS
       grid.style.cssText = `
-        display: grid;
-        grid-template-columns: ${gridColumns};
-        gap: ${gap};
-        width: 100%;
-        max-width: 100%;
-        margin-bottom: 40px;
-        padding: ${padding};
-        justify-content: stretch;
+        display: grid !important;
+        grid-template-columns: repeat(${columns}, 1fr) !important;
+        gap: ${gap}px !important;
+        width: 100% !important;
+        margin-bottom: 40px !important;
+        padding: 0 !important;
+        box-sizing: border-box !important;
+        justify-content: stretch !important;
       `;
+      
+      console.log(`📐 Applied Grid: ${columns} cols, ${gap}px gap, template-columns: repeat(${columns}, 1fr)`);
     };
     
     // Initial layout
@@ -2397,9 +2423,6 @@ class XSavedContentScript {
       position: relative;
       cursor: pointer;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      max-width: 320px;
-      min-width: 160px;
-      min-height: 220px;
     `;
 
     // Hover effect
@@ -2571,8 +2594,12 @@ class XSavedContentScript {
     `;
     tweetText.textContent = safeBookmark.text;
 
-    // Check if text is truncated and add "more" link
-    if (safeBookmark.text.length > 200) {
+    // Smart text truncation based on card size and media presence
+    const hasMedia = safeBookmark.media_urls && safeBookmark.media_urls.length > 0;
+    const maxTextLength = hasMedia ? 120 : 250; // Shorter text if media present
+    
+    // Check if text needs truncation and add "more" link
+    if (safeBookmark.text.length > maxTextLength) {
       const moreLink = document.createElement('span');
       moreLink.style.cssText = `
         color: #3498db;
@@ -2580,10 +2607,23 @@ class XSavedContentScript {
         position: absolute;
         right: 0;
         bottom: 0;
-        background-color: #1A1A1A;
-        padding-left: 4px;
+        background: linear-gradient(90deg, transparent, #1A1A1A 20%);
+        padding: 0 0 0 12px;
+        font-size: 13px;
+        font-weight: 600;
+        border-radius: 3px;
+        transition: color 0.2s ease;
       `;
-      moreLink.innerHTML = '<small class="underline">more</small>';
+      moreLink.innerHTML = '<small>more</small>';
+      
+      // Hover effect for better UX
+      moreLink.addEventListener('mouseenter', () => {
+        moreLink.style.color = '#60a5fa';
+      });
+      
+      moreLink.addEventListener('mouseleave', () => {
+        moreLink.style.color = '#3498db';
+      });
       
       moreLink.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -2598,8 +2638,8 @@ class XSavedContentScript {
     if (safeBookmark.media_urls && safeBookmark.media_urls.length > 0) {
       mediaContainer = document.createElement('div');
       mediaContainer.style.cssText = `
-        width: calc(100% - 0px);
-        height: 100px;
+        width: calc(100% - 32px);
+        height: 90px;
         margin-top: auto;
         overflow: hidden;
         display: flex;
@@ -2609,6 +2649,8 @@ class XSavedContentScript {
         bottom: 16px;
         left: 16px;
         right: 16px;
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.05);
       `;
 
       const mediaImage = document.createElement('img');

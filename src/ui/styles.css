@@ -104,14 +104,10 @@
 }
 
 /* ===== RESPONSIVE GRID ===== */
+/* Grid layout is now handled by JavaScript for precise responsive control */
 @media (max-width: 768px) {
   #xsaved-grid-overlay {
     padding: 12px !important;
-  }
-  
-  #xsaved-bookmarks-grid {
-    grid-template-columns: repeat(1, minmax(0, 210px)) !important;
-    gap: 12px !important;
   }
   
   .xsaved-save-dialog {
@@ -120,29 +116,10 @@
   }
 }
 
-@media (min-width: 640px) {
-  #xsaved-bookmarks-grid {
-    grid-template-columns: repeat(4, minmax(0, 210px)) !important;
-  }
-}
-
-@media (min-width: 1024px) {
-  #xsaved-bookmarks-grid {
-    grid-template-columns: repeat(5, minmax(0, 210px)) !important;
-  }
-}
-
-@media (min-width: 1280px) {
-  #xsaved-bookmarks-grid {
-    grid-template-columns: repeat(6, minmax(0, 210px)) !important;
-  }
-}
-  
-  #xsaved-bookmarks-toggle {
-    flex-direction: column !important;
-    gap: 8px !important;
-    padding: 12px !important;
-  }
+#xsaved-bookmarks-toggle {
+  flex-direction: column !important;
+  gap: 8px !important;
+  padding: 12px !important;
 }
 
 /* ===== ACCESSIBILITY ===== */
