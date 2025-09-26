@@ -1275,21 +1275,78 @@ class XSavedContentScript {
     const contentContainer = document.createElement('div');
     contentContainer.style.cssText = `
       margin-top: 100px;
-      padding: 0 20px;
+      padding: 0 8px;
     `;
 
     // Create grid container
     const grid = document.createElement('div');
     grid.className = 'grid';
     grid.id = 'xsaved-bookmarks-grid';
-    grid.style.cssText = `
-      display: grid;
-      justify-content: center;
-      grid-template-columns: repeat(3, minmax(0, 210px));
-      gap: 24px;
-      justify-items: center;
-      margin-bottom: 40px;
-    `;
+    
+    // Apply responsive grid based on viewport width
+    const updateGridLayout = () => {
+      const viewportWidth = window.innerWidth - 16; // Account for content padding
+      let columns, gap, padding;
+      
+      // Calculate optimal columns and sizing
+      if (viewportWidth <= 480) {
+        // Mobile: Always exactly 2 columns
+        columns = 2;
+        gap = '2px';
+        padding = '0 2px';
+      } else if (viewportWidth <= 768) {
+        // Tablet: 2-3 columns based on space
+        const idealCardWidth = 200;
+        columns = Math.max(2, Math.floor((viewportWidth + 3) / (idealCardWidth + 3)));
+        gap = '3px';
+        padding = '0 3px';
+      } else if (viewportWidth <= 1200) {
+        // Desktop small: 3-5 columns
+        const idealCardWidth = 220;
+        columns = Math.max(3, Math.floor((viewportWidth + 4) / (idealCardWidth + 4)));
+        gap = '4px';
+        padding = '0 4px';
+      } else if (viewportWidth <= 1600) {
+        // Desktop medium: 4-6 columns
+        const idealCardWidth = 240;
+        columns = Math.max(4, Math.floor((viewportWidth + 5) / (idealCardWidth + 5)));
+        gap = '5px';
+        padding = '0 5px';
+      } else {
+        // Desktop large: 5-8 columns
+        const idealCardWidth = 250;
+        columns = Math.max(5, Math.floor((viewportWidth + 6) / (idealCardWidth + 6)));
+        gap = '6px';
+        padding = '0 6px';
+      }
+      
+      // Use exact column count to eliminate gaps
+      const gridColumns = `repeat(${columns}, 1fr)`;
+      
+      grid.style.cssText = `
+        display: grid;
+        grid-template-columns: ${gridColumns};
+        gap: ${gap};
+        width: 100%;
+        max-width: 100%;
+        margin-bottom: 40px;
+        padding: ${padding};
+        justify-content: stretch;
+      `;
+    };
+    
+    // Initial layout
+    updateGridLayout();
+    
+    // Debounced resize handler for better performance
+    let resizeTimeout;
+    const debouncedResize = () => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(updateGridLayout, 100);
+    };
+    
+    // Update on resize
+    window.addEventListener('resize', debouncedResize);
 
     container.appendChild(contentContainer);
     contentContainer.appendChild(grid);
@@ -2331,15 +2388,18 @@ class XSavedContentScript {
     // Apply base card styles without floating animations
     card.className = 'tweet-card';
     card.style.cssText = `
-      width: 240px;
-      height: 280px;
-      border-radius: 12px;
-      margin: 10px;
+      width: 100%;
+      aspect-ratio: 6/7;
+      border-radius: 6px;
+      margin: 0;
       overflow: hidden;
       transition: transform 0.3s ease, box-shadow 0.3s ease;
       position: relative;
       cursor: pointer;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 320px;
+      min-width: 160px;
+      min-height: 220px;
     `;
 
     // Hover effect
