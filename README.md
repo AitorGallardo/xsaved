@@ -1,7 +1,7 @@
-# XSaved v2
+# XSaved
 
 <div align="center">
-  <img src="icons/xsaved-croped.svg" alt="XSaved Logo" width="128" height="128">
+  <img src="icons/xsaved-icon-bigger.svg" alt="XSaved Logo" width="256" height="256">
   
   **Local-first Twitter bookmark management with lightning-fast search**
   
@@ -32,8 +32,8 @@
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/xsaved-extension-v2.git
-   cd xsaved-extension-v2
+   git clone https://github.com/yourusername/xsaved-extension.git
+   cd xsaved-extension
    ```
 
 2. **Install dependencies**
@@ -233,17 +233,18 @@ XSaved v2 is optimized for performance:
 - [x] Export functionality
 
 ### Phase 2: Enhanced Features 🚧
-- [ ] Advanced filtering options
-- [ ] Bookmark collections/folders
+- [ ] Tag filtering system
+- [ ] Smart auto tag system
+<!-- - [ ] Bookmark collections/folders
 - [ ] Import from other bookmark managers
 - [ ] Keyboard shortcuts
-- [ ] Bulk operations
+- [ ] Bulk operations -->
 
-### Phase 3: Premium Features 🔮
+<!-- ### Phase 3: Premium Features 🔮
 - [ ] Notion integration
 - [ ] Advanced export formats
 - [ ] Bookmark analytics
-- [ ] Collaborative features
+- [ ] Collaborative features -->
 
 ## License
 
@@ -251,14 +252,13 @@ XSaved v2 is open source software licensed under the [MIT License](LICENSE).
 
 ## Support
 
-- 🐛 **Bug Reports**: [Open an issue](https://github.com/yourusername/xsaved-extension-v2/issues)
-- 💡 **Feature Requests**: [Start a discussion](https://github.com/yourusername/xsaved-extension-v2/discussions)
+- 🐛 **Bug Reports**: [Open an issue](https://github.com/yourusername/xsaved-extension/issues)
+- 💡 **Feature Requests**: [Start a discussion](https://github.com/yourusername/xsaved-extension/discussions)
 - 📧 **Security Issues**: Email security@yoursite.com
 - 📖 **Documentation**: Check our [docs folder](docs/)
 
 ## Acknowledgments
 
-- Inspired by [Dark Reader](https://github.com/darkreader/darkreader) for excellent open-source practices
 - Built with [Dexie.js](https://dexie.org/) for IndexedDB management
 - Icons and design inspired by modern Twitter/X interface
 
@@ -267,6 +267,6 @@ XSaved v2 is open source software licensed under the [MIT License](LICENSE).
 <div align="center">
   <p>Made with ❤️ for the Twitter/X community</p>
   <p>
-    <a href="#xsaved-v2">Back to top</a>
+    <a href="#xsaved">Back to top</a>
   </p>
 </div>
