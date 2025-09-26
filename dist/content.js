@@ -946,6 +946,9 @@ class XSavedContentScript {
   toggleGridMode(activate) {
     console.log(`🔄 Toggling grid mode: ${activate ? 'ON' : 'OFF'}`);
     
+    // Update grid state tracking
+    isGridModeActive = activate;
+    
     // Simple immediate toggle - no waiting for content
     if (activate) {
       this.showGridInterface();
@@ -1825,6 +1828,9 @@ class XSavedContentScript {
     document.body.style.overflow = '';
     document.documentElement.style.overflow = '';
 
+    // Reset grid state
+    isGridModeActive = false;
+
     // Show X.com search input
     const searchContainer = document.querySelector('div[data-xsaved-hidden="true"]');
     if (searchContainer) {
@@ -2625,13 +2631,14 @@ class XSavedContentScript {
     // Check if text needs truncation and add "more" link
     if (safeBookmark.text.length > maxTextLength) {
       const moreLink = document.createElement('span');
+      moreLink.className = 'xsaved-more-link';
       moreLink.style.cssText = `
-        color: #3498db;
+        color: var(--xsaved-primary-color);
         cursor: pointer;
         position: absolute;
         right: 0;
         bottom: 0;
-        background: linear-gradient(90deg, transparent, #1A1A1A 20%);
+        background: linear-gradient(90deg, transparent, var(--xsaved-surface-color) 20%);
         padding: 0 0 0 12px;
         font-size: 13px;
         font-weight: 600;
@@ -2642,11 +2649,11 @@ class XSavedContentScript {
       
       // Hover effect for better UX
       moreLink.addEventListener('mouseenter', () => {
-        moreLink.style.color = '#60a5fa';
+        moreLink.style.color = 'var(--xsaved-accent-color)';
       });
       
       moreLink.addEventListener('mouseleave', () => {
-        moreLink.style.color = '#3498db';
+        moreLink.style.color = 'var(--xsaved-primary-color)';
       });
       
       moreLink.addEventListener('click', (e) => {
@@ -4790,8 +4797,17 @@ class XSavedContentScript {
     
     const urlObserver = new MutationObserver(() => {
       if (window.location.href !== currentUrl) {
+        const wasOnBookmarksPage = currentUrl.includes('/i/bookmarks');
         currentUrl = window.location.href;
         console.log('🧭 URL changed to:', currentUrl);
+        
+        // If we were on bookmarks page and navigated away, clean up grid state
+        if (wasOnBookmarksPage && !XSAVED_CONFIG.pages.isBookmarksPage()) {
+          console.log('🚪 Navigated away from bookmarks page, cleaning up grid state...');
+          this.hideGridInterface();
+          isGridModeActive = false;
+          console.log('🧹 Grid state reset on navigation away from bookmarks');
+        }
         
         // Clean up existing toggle on navigation
         const existingToggle = document.getElementById('xsaved-bookmarks-toggle');
@@ -4817,10 +4833,16 @@ class XSavedContentScript {
 
     // Also listen for popstate events
     window.addEventListener('popstate', () => {
+      const wasOnBookmarksPage = window.location.href.includes('/i/bookmarks');
       setTimeout(() => {
         if (XSAVED_CONFIG.pages.isBookmarksPage()) {
           console.log('📍 Popstate to bookmarks page, initializing...');
           this.initializeBookmarksPage();
+        } else if (wasOnBookmarksPage) {
+          console.log('🚪 Popstate away from bookmarks page, cleaning up grid state...');
+          this.hideGridInterface();
+          isGridModeActive = false;
+          console.log('🧹 Grid state reset on popstate away from bookmarks');
         }
       }, 1000); // Increased delay for SPA navigation
     });
