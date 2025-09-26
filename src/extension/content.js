@@ -1182,10 +1182,10 @@ class XSavedContentScript {
       left: 0;
       right: 0;
       max-height: 300px;
-      background: rgb(15, 23, 42);
-      border: 1px solid rgba(148, 163, 184, 0.3);
-      border-radius: 8px;
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+      background: var(--xsaved-surface-color);
+      border: 1px solid var(--xsaved-border-color);
+      border-radius: var(--xsaved-radius-medium);
+      box-shadow: var(--xsaved-shadow-heavy);
       z-index: 10001;
       overflow-y: auto;
       display: none;
@@ -1206,20 +1206,20 @@ class XSavedContentScript {
       align-items: center;
       justify-content: center;
       padding: 8px 12px;
-      background: rgba(59, 130, 246, 0.2);
-      border: 1px solid rgba(59, 130, 246, 0.4);
+      background: var(--xsaved-surface-color);
+      border: 1px solid var(--xsaved-border-color);
       border-radius: 20px;
-      color: #3B82F6;
+      color: var(--xsaved-text-color);
       cursor: pointer;
       transition: all 0.2s ease;
       margin-right: 8px;
     `;
 
     sortButton.addEventListener('mouseenter', () => {
-      sortButton.style.background = 'rgba(59, 130, 246, 0.3)';
+      sortButton.style.background = 'var(--xsaved-hover-color)';
     });
     sortButton.addEventListener('mouseleave', () => {
-      sortButton.style.background = 'rgba(59, 130, 246, 0.2)';
+      sortButton.style.background = 'var(--xsaved-surface-color)';
     });
 
     sortButton.addEventListener('click', () => {
@@ -1240,19 +1240,19 @@ class XSavedContentScript {
       align-items: center;
       justify-content: center;
       padding: 8px 12px;
-      background: rgba(34, 197, 94, 0.2);
-      border: 1px solid rgba(34, 197, 94, 0.4);
+      background: color-mix(in srgb, var(--xsaved-accent-color) 20%, transparent);
+      border: 1px solid color-mix(in srgb, var(--xsaved-accent-color) 40%, transparent);
       border-radius: 20px;
-      color: #22C55E;
+      color: var(--xsaved-accent-color);
       cursor: pointer;
       transition: all 0.2s ease;
     `;
 
     downloadButton.addEventListener('mouseenter', () => {
-      downloadButton.style.background = 'rgba(34, 197, 94, 0.3)';
+      downloadButton.style.background = 'color-mix(in srgb, var(--xsaved-accent-color) 30%, transparent)';
     });
     downloadButton.addEventListener('mouseleave', () => {
-      downloadButton.style.background = 'rgba(34, 197, 94, 0.2)';
+      downloadButton.style.background = 'color-mix(in srgb, var(--xsaved-accent-color) 20%, transparent)';
     });
 
     downloadButton.addEventListener('click', () => {
@@ -1290,8 +1290,8 @@ class XSavedContentScript {
       IDEAL_WIDTH: 220,  // Preferred card width
     };
 
-    // Apply responsive grid based on viewport width
-    const updateGridLayout = () => {
+    // Function to calculate optimal grid layout
+    const updateOptimalGridLayout = () => {
       // Get actual available width accounting for all padding/margins
       const contentPadding = 16; // 8px on each side from contentContainer
       const viewportWidth = window.innerWidth;
@@ -1362,13 +1362,13 @@ class XSavedContentScript {
     };
     
     // Initial layout
-    updateGridLayout();
+    updateOptimalGridLayout();
     
     // Debounced resize handler for better performance
     let resizeTimeout;
     const debouncedResize = () => {
       clearTimeout(resizeTimeout);
-      resizeTimeout = setTimeout(updateGridLayout, 100);
+      resizeTimeout = setTimeout(updateOptimalGridLayout, 100);
     };
     
     // Update on resize
@@ -1567,7 +1567,7 @@ class XSavedContentScript {
         noResults.textContent = 'No authors found';
         noResults.style.cssText = `
           padding: 12px 16px;
-          color: rgba(148, 163, 184, 0.7);
+          color: var(--xsaved-text-secondary);
           font-style: italic;
         `;
         authorDropdown.appendChild(noResults);
@@ -1580,7 +1580,7 @@ class XSavedContentScript {
         item.style.cssText = `
           padding: 12px 16px;
           cursor: pointer;
-          border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+          border-bottom: 1px solid var(--xsaved-border-color);
           transition: background-color 0.15s ease;
           display: flex;
           align-items: center;
@@ -1595,7 +1595,7 @@ class XSavedContentScript {
           height: 24px;
           border-radius: 50%;
           flex-shrink: 0;
-          background: rgba(148, 163, 184, 0.3);
+          background: var(--xsaved-border-color);
         `;
         
         // Handle missing or broken avatars
@@ -1613,15 +1613,15 @@ class XSavedContentScript {
         `;
         
         content.innerHTML = `
-          <span style="color: rgb(229, 231, 235); font-weight: 500;">@${authorData.author}</span>
-          <span style="color: rgba(148, 163, 184, 0.7); font-size: 12px;">${authorData.count} tweets</span>
+          <span style="color: var(--xsaved-text-color); font-weight: 500;">@${authorData.author}</span>
+          <span style="color: var(--xsaved-text-secondary); font-size: 12px;">${authorData.count} tweets</span>
         `;
         
         item.appendChild(avatar);
         item.appendChild(content);
         
         item.addEventListener('mouseenter', () => {
-          item.style.backgroundColor = 'rgba(59, 130, 246, 0.2)';
+          item.style.backgroundColor = 'var(--xsaved-hover-color)';
           selectedAuthorIndex = index;
           updateDropdownSelection();
         });
@@ -1642,7 +1642,7 @@ class XSavedContentScript {
       const items = authorDropdown.querySelectorAll('.author-dropdown-item');
       items.forEach((item, index) => {
         if (index === selectedAuthorIndex) {
-          item.style.backgroundColor = 'rgba(59, 130, 246, 0.3)';
+          item.style.backgroundColor = 'color-mix(in srgb, var(--xsaved-primary-color) 20%, transparent)';
         } else {
           item.style.backgroundColor = 'transparent';
         }
@@ -2278,10 +2278,10 @@ class XSavedContentScript {
       position: absolute;
       top: 100%;
       right: 0;
-      background: #15202b;
-      border: 1px solid #38444d;
-      border-radius: 8px;
-      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+      background: var(--xsaved-surface-color);
+      border: 1px solid var(--xsaved-border-color);
+      border-radius: var(--xsaved-radius-medium);
+      box-shadow: var(--xsaved-shadow-heavy);
       z-index: 10002;
       min-width: 180px;
       margin-top: 8px;
@@ -2304,11 +2304,11 @@ class XSavedContentScript {
         align-items: center;
         justify-content: space-between;
         padding: 12px 16px;
-        color: ${isActive ? '#3B82F6' : 'white'};
+        color: var(--xsaved-text-color);
         cursor: pointer;
         transition: background-color 0.2s ease;
-        border-bottom: ${index < sortFields.length - 1 ? '1px solid #38444d' : 'none'};
-        background-color: ${isActive ? 'rgba(59, 130, 246, 0.1)' : 'transparent'};
+        border-bottom: ${index < sortFields.length - 1 ? '1px solid var(--xsaved-border-color)' : 'none'};
+        background-color: ${isActive ? 'var(--xsaved-hover-color)' : 'transparent'};
       `;
 
       menuItem.innerHTML = `
@@ -2318,12 +2318,12 @@ class XSavedContentScript {
 
       menuItem.addEventListener('mouseenter', () => {
         if (!isActive) {
-          menuItem.style.backgroundColor = '#1a3a4a';
+          menuItem.style.backgroundColor = 'var(--xsaved-hover-color)';
         }
       });
 
       menuItem.addEventListener('mouseleave', () => {
-        menuItem.style.backgroundColor = isActive ? 'rgba(59, 130, 246, 0.1)' : 'transparent';
+        menuItem.style.backgroundColor = isActive ? 'var(--xsaved-hover-color)' : 'transparent';
       });
 
       menuItem.addEventListener('click', () => {
@@ -3487,17 +3487,17 @@ class XSavedContentScript {
     dialog.className = 'xsaved-save-dialog';
     dialog.style.cssText = `
       position: fixed;
-      background: linear-gradient(135deg, rgba(21, 32, 43, 0.98), rgba(21, 32, 43, 0.95));
+      background: var(--xsaved-surface-color);
       backdrop-filter: blur(16px);
-      border: 1px solid rgba(29, 161, 242, 0.4);
+      border: 1px solid var(--xsaved-border-color);
       border-radius: 16px;
       padding: 20px;
       z-index: 10000;
-      box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+      box-shadow: var(--xsaved-shadow-heavy);
       min-width: 320px;
       max-width: 400px;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      color: #ffffff;
+      color: var(--xsaved-text-color);
       opacity: 0;
       transform: translateY(15px) scale(0.95);
       transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -3512,7 +3512,7 @@ class XSavedContentScript {
       margin-bottom: 16px;
       font-size: 16px;
       font-weight: 600;
-      color: #1DA1F2;
+      color: var(--xsaved-text-color);
     `;
 
     const headerLeft = document.createElement('div');
@@ -3533,7 +3533,7 @@ class XSavedContentScript {
     closeButton.style.cssText = `
       background: none;
       border: none;
-      color: rgba(255, 255, 255, 0.6);
+      color: var(--xsaved-text-secondary);
       font-size: 20px;
       cursor: pointer;
       padding: 0;
@@ -3552,17 +3552,17 @@ class XSavedContentScript {
     // Tweet preview
     const preview = document.createElement('div');
     preview.style.cssText = `
-      background: rgba(255, 255, 255, 0.05);
+      background: color-mix(in srgb, var(--xsaved-border-color) 20%, transparent);
       border-radius: 8px;
       padding: 12px;
       margin-bottom: 16px;
-      border-left: 3px solid #1DA1F2;
+      border-left: 3px solid var(--xsaved-primary-color);
     `;
 
     const previewAuthor = document.createElement('div');
     previewAuthor.style.cssText = `
       font-weight: 600;
-      color: #1DA1F2;
+      color: var(--xsaved-primary-color);
       font-size: 14px;
       margin-bottom: 4px;
     `;
@@ -3570,7 +3570,7 @@ class XSavedContentScript {
 
     const previewText = document.createElement('div');
     previewText.style.cssText = `
-      color: rgba(255, 255, 255, 0.9);
+      color: var(--xsaved-text-color);
       font-size: 13px;
       line-height: 1.4;
     `;
@@ -3591,7 +3591,7 @@ class XSavedContentScript {
       margin-bottom: 8px;
       font-size: 14px;
       font-weight: 500;
-      color: rgba(255, 255, 255, 0.9);
+      color: var(--xsaved-text-color);
     `;
     tagsLabel.textContent = 'Tags (optional):';
 
@@ -3605,22 +3605,23 @@ class XSavedContentScript {
       margin-bottom: 8px;
       min-height: 28px;
       padding: 8px;
-      border: 1px solid rgba(255, 255, 255, 0.2);
+      border: 1px solid var(--xsaved-border-color);
       border-radius: 8px;
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--xsaved-input-bg);
     `;
 
     const tagsInput = document.createElement('input');
     tagsInput.type = 'text';
     tagsInput.className = 'xsaved-tag-input';
     tagsInput.placeholder = 'Type tags and press space or comma...';
+    tagsInput.style.setProperty('--placeholder-color', 'var(--xsaved-placeholder-color)');
     tagsInput.style.cssText = `
       width: 100%;
       padding: 8px 12px;
-      border: 1px solid rgba(255, 255, 255, 0.2);
+      border: 1px solid var(--xsaved-border-color);
       border-radius: 8px;
-      background: rgba(255, 255, 255, 0.08);
-      color: white;
+      background: var(--xsaved-input-bg);
+      color: var(--xsaved-text-color);
       font-size: 14px;
       font-family: inherit;
       outline: none;
@@ -3637,8 +3638,8 @@ class XSavedContentScript {
         display: inline-flex;
         align-items: center;
         gap: 4px;
-        background: rgba(29, 161, 242, 0.2);
-        color: #1DA1F2;
+        background: color-mix(in srgb, var(--xsaved-primary-color) 20%, transparent);
+        color: var(--xsaved-primary-color);
         padding: 4px 8px;
         border-radius: 12px;
         font-size: 12px;
@@ -3743,14 +3744,14 @@ class XSavedContentScript {
 
     // Input focus effects
     tagsInput.addEventListener('focus', () => {
-      tagsInput.style.borderColor = '#1DA1F2';
-      tagsContainer.style.borderColor = '#1DA1F2';
+      tagsInput.style.borderColor = 'var(--xsaved-primary-color)';
+      tagsContainer.style.borderColor = 'var(--xsaved-primary-color)';
       // Only reset timeout on initial focus, not on every interaction
       this.resetTooltipTimeout();
     });
     tagsInput.addEventListener('blur', () => {
-      tagsInput.style.borderColor = 'rgba(255, 255, 255, 0.2)';
-      tagsContainer.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+      tagsInput.style.borderColor = 'var(--xsaved-border-color)';
+      tagsContainer.style.borderColor = 'var(--xsaved-border-color)';
       
       // Add any remaining text as a tag
       const remainingText = tagsInput.value.trim();
@@ -3781,10 +3782,10 @@ class XSavedContentScript {
     cancelButton.textContent = 'Cancel';
     cancelButton.style.cssText = `
       padding: 8px 16px;
-      border: 1px solid rgba(255, 255, 255, 0.3);
+      border: 1px solid var(--xsaved-border-color);
       border-radius: 6px;
       background: transparent;
-      color: rgba(255, 255, 255, 0.8);
+      color: var(--xsaved-text-secondary);
       font-size: 14px;
       cursor: pointer;
       transition: all 0.2s ease;
@@ -3802,8 +3803,8 @@ class XSavedContentScript {
       padding: 8px 20px;
       border: none;
       border-radius: 6px;
-      background: #1DA1F2;
-      color: white;
+      background: var(--xsaved-primary-color);
+      color: var(--xsaved-bg-color);
       font-size: 14px;
       font-weight: 600;
       cursor: pointer;
@@ -3812,19 +3813,19 @@ class XSavedContentScript {
 
     // Button hover effects
     cancelButton.addEventListener('mouseenter', () => {
-      cancelButton.style.borderColor = 'rgba(255, 255, 255, 0.5)';
-      cancelButton.style.color = 'white';
+      cancelButton.style.backgroundColor = 'var(--xsaved-hover-color)';
+      cancelButton.style.color = 'var(--xsaved-text-color)';
     });
     cancelButton.addEventListener('mouseleave', () => {
-      cancelButton.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-      cancelButton.style.color = 'rgba(255, 255, 255, 0.8)';
+      cancelButton.style.backgroundColor = 'transparent';
+      cancelButton.style.color = 'var(--xsaved-text-secondary)';
     });
 
     saveButton.addEventListener('mouseenter', () => {
-      saveButton.style.background = '#1991db';
+      saveButton.style.filter = 'brightness(0.9)';
     });
     saveButton.addEventListener('mouseleave', () => {
-      saveButton.style.background = '#1DA1F2';
+      saveButton.style.filter = 'none';
     });
 
     // Save button action

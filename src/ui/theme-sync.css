@@ -55,15 +55,56 @@
   color: var(--xsaved-placeholder-color) !important;
 }
 
-.xsaved-save-dialog button {
+.xsaved-save-dialog input:focus,
+.xsaved-save-dialog textarea:focus {
+  border-color: var(--xsaved-primary-color) !important;
+  outline: none !important;
+}
+
+.xsaved-save-dialog button.save-button {
   background: var(--xsaved-primary-color) !important;
   color: var(--xsaved-bg-color) !important;
   border: none !important;
 }
 
+.xsaved-save-dialog button.cancel-button {
+  background: transparent !important;
+  color: var(--xsaved-text-secondary) !important;
+  border: 1px solid var(--xsaved-border-color) !important;
+}
+
 .xsaved-save-dialog button:hover {
-  background: var(--xsaved-accent-color) !important;
-  filter: brightness(0.9);
+  filter: brightness(0.9) !important;
+}
+
+.xsaved-save-dialog button.cancel-button:hover {
+  background: var(--xsaved-hover-color) !important;
+  color: var(--xsaved-text-color) !important;
+}
+
+/* Save Dialog Tags */
+.xsaved-save-dialog .xsaved-tags-container {
+  background: var(--xsaved-input-bg) !important;
+  border: 1px solid var(--xsaved-border-color) !important;
+}
+
+.xsaved-save-dialog .tag-element {
+  background: color-mix(in srgb, var(--xsaved-primary-color) 20%, transparent) !important;
+  color: var(--xsaved-primary-color) !important;
+}
+
+/* Save Dialog Preview */
+.xsaved-save-dialog .preview {
+  background: color-mix(in srgb, var(--xsaved-border-color) 20%, transparent) !important;
+  border-left: 3px solid var(--xsaved-primary-color) !important;
+}
+
+.xsaved-save-dialog .preview-author {
+  color: var(--xsaved-primary-color) !important;
+}
+
+.xsaved-save-dialog .preview-text {
+  color: var(--xsaved-text-color) !important;
 }
 
 /* Tag Input */
@@ -350,4 +391,80 @@ button.xsaved-tag-selector * {
 .xsaved-success {
   color: #51cf66 !important;
   border-color: #51cf66 !important;
+}
+
+/* ===== AUTHOR DROPDOWN ===== */
+.xsaved-author-dropdown {
+  background: var(--xsaved-surface-color) !important;
+  border: 1px solid var(--xsaved-border-color) !important;
+  border-radius: var(--xsaved-radius-medium) !important;
+  box-shadow: var(--xsaved-shadow-heavy) !important;
+  color: var(--xsaved-text-color) !important;
+}
+
+.xsaved-author-dropdown .author-dropdown-item {
+  border-bottom: 1px solid var(--xsaved-border-color) !important;
+  color: var(--xsaved-text-color) !important;
+}
+
+.xsaved-author-dropdown .author-dropdown-item:hover {
+  background-color: var(--xsaved-hover-color) !important;
+}
+
+.xsaved-author-dropdown .author-dropdown-item.selected {
+  background-color: color-mix(in srgb, var(--xsaved-primary-color) 20%, transparent) !important;
+}
+
+/* ===== SORT MENU ===== */
+#xsaved-sort-menu {
+  background: var(--xsaved-surface-color) !important;
+  border: 1px solid var(--xsaved-border-color) !important;
+  border-radius: var(--xsaved-radius-medium) !important;
+  box-shadow: var(--xsaved-shadow-heavy) !important;
+  color: var(--xsaved-text-color) !important;
+}
+
+#xsaved-sort-menu > div {
+  border-bottom: 1px solid var(--xsaved-border-color) !important;
+  color: var(--xsaved-text-color) !important;
+}
+
+#xsaved-sort-menu > div:hover {
+  background-color: var(--xsaved-hover-color) !important;
+}
+
+#xsaved-sort-menu > div.active {
+  background-color: var(--xsaved-hover-color) !important;
+  color: var(--xsaved-text-color) !important;
+}
+
+/* ===== GRID HEADER BUTTONS ===== */
+/* Sort button - neutral surface styling */
+.xsaved-grid-overlay button[onclick*="sort"],
+#xsaved-grid-overlay button[onclick*="sort"] {
+  background: var(--xsaved-surface-color) !important;
+  border: 1px solid var(--xsaved-border-color) !important;
+  color: var(--xsaved-text-color) !important;
+  border-radius: 20px !important;
+  transition: all 0.2s ease !important;
+}
+
+.xsaved-grid-overlay button[onclick*="sort"]:hover,
+#xsaved-grid-overlay button[onclick*="sort"]:hover {
+  background: var(--xsaved-hover-color) !important;
+}
+
+/* Download button - keep accent color for distinction */
+.xsaved-grid-overlay button[onclick*="download"],
+#xsaved-grid-overlay button[onclick*="download"] {
+  background: color-mix(in srgb, var(--xsaved-accent-color) 20%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--xsaved-accent-color) 40%, transparent) !important;
+  color: var(--xsaved-accent-color) !important;
+  border-radius: 20px !important;
+  transition: all 0.2s ease !important;
+}
+
+.xsaved-grid-overlay button[onclick*="download"]:hover,
+#xsaved-grid-overlay button[onclick*="download"]:hover {
+  background: color-mix(in srgb, var(--xsaved-accent-color) 30%, transparent) !important;
 }
