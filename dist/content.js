@@ -1,6 +1,6 @@
 /******/ (() => { // webpackBootstrap
 /**
- * XSaved Extension v2 - Enhanced Content Script
+ * XSaved Extension v2 - Content Script
  * Phase 3: Content Script & DOM Injection
  * 
  * Features:
@@ -8,6 +8,72 @@
  * - X.com /bookmarks page toggle for grid view
  * - Robust messaging with service worker
  * - Integration with Components 1 & 2 (IndexedDB + Search)
+ * 
+ * =============================================================================
+ * 📊 DATA LOADING FLOWS DOCUMENTATION
+ * =============================================================================
+ * 
+ * 🔄 **1. INITIAL LOADING SEARCH**
+ * Flow: loadBookmarksGrid() → loadBookmarksPage() → Service Worker → SearchEngine
+ * Trigger: User opens extension grid interface
+ * Query: { limit: INITIAL_LOAD, offset: 0, sortBy: 'created_at', sortOrder: 'desc' }
+ * Result: Loads first page of bookmarks with default sorting
+ * 
+ * 📄 **2. PAGINATION SEARCH**
+ * Flow: loadNextPage() → loadBookmarksPage(append=true) → Service Worker → SearchEngine
+ * Trigger: User scrolls to bottom of grid
+ * Query: Uses this.pagination.currentQuery + incremented offset
+ * Result: Appends more results to existing grid without replacing
+ * 
+ * 🔍 **3. TEXT SEARCH**
+ * Flow: User types → updateFilter('text') → executeSearch() → loadBookmarksPage()
+ * Trigger: Text input with debounce (300ms)
+ * State: activeFilters = [{type: 'text', value: 'search term', label: 'search term'}]
+ * Query: { text: 'search term', limit: INITIAL_LOAD, offset: 0, sortBy: current, sortOrder: current }
+ * Result: Replaces grid with text search results
+ * 
+ * 👤 **4. AUTHOR SEARCH**
+ * Flow: Type '@' → Author dropdown → selectAuthor() → updateFilter('author') → executeSearch()
+ * Trigger: User selects author from '@' dropdown
+ * State: activeFilters = [{type: 'author', value: 'username', label: '@username', avatarUrl: '...'}]
+ * Query: { author: 'username', limit: INITIAL_LOAD, offset: 0, sortBy: current, sortOrder: current }
+ * Result: Replaces grid with author-specific tweets, search box shows author with avatar
+ * 
+ * 🏷️ **5. TAG SEARCH**
+ * Flow: selectActiveTag() → loadBookmarksPage() → Service Worker → SearchEngine
+ * Trigger: User clicks tag filter
+ * State: this.currentSelectedTags = Set(['tag1', 'tag2'])
+ * Query: { tags: ['tag1', 'tag2'], limit: INITIAL_LOAD, offset: 0, sortBy: current, sortOrder: current }
+ * Result: Replaces grid with tag-filtered results
+ * 
+ * 🔄 **6. SORT SEARCH**
+ * Flow: Sort button → showSortMenuWithFilters() → executeSearch() → loadBookmarksPage()
+ * Trigger: User changes sort order/field
+ * State: this.currentSort = {field: 'created_at', order: 'desc'}
+ * Query: Combines current activeFilters + new sort settings
+ * Result: Re-executes current search with new sorting, preserving all filters
+ * 
+ * =============================================================================
+ * 🔗 **UNIFIED SEARCH ARCHITECTURE**
+ * =============================================================================
+ * 
+ * **State Management:**
+ * - activeFilters[] = Unified filter state (text, author, future: tags, dates)
+ * - this.currentSort = Sort state shared across all searches
+ * - this.pagination.currentQuery = Last executed query for pagination
+ * 
+ * **Single Entry Point:**
+ * - executeSearch() = ONLY function that builds final query and triggers search
+ * - All search types → updateFilter() → executeSearch() → loadBookmarksPage()
+ * 
+ * **Search Persistence:**
+ * - Text + Author filters persist through sorting
+ * - Sort settings persist through filter changes
+ * - Pagination uses stored query for consistency
+ * 
+ * **Query Building:**
+ * executeSearch() reads activeFilters + this.currentSort → Builds unified query →
+ * Service Worker → SearchEngine.search() → Database → Results
  */
 
 console.log('🚀 XSaved v2 Enhanced Content Script loaded:', window.location.href);
@@ -1229,48 +1295,64 @@ class XSavedContentScript {
     container.appendChild(contentContainer);
     contentContainer.appendChild(grid);
 
-    // Filter state management (separate from search text)
-    let activeFilters = []; // [{type: 'author', value: 'username', label: '@username'}]
+    // Unified search state management
+    let activeFilters = []; // All search criteria: text, author, tags, etc.
     let searchTimeout;
     let authorSearchTimeout;
     let selectedAuthorIndex = -1;
     let currentAuthors = [];
     
-    // Filter management functions
-    const addFilter = (type, value, label, avatarUrl) => {
-      // For simplicity, only allow one filter at a time
-      activeFilters = [{ type, value, label, avatarUrl }];
+    // Unified filter management
+    const updateFilter = (type, value, label, avatarUrl) => {
+      console.log(`🔧 updateFilter called:`, { type, value, label, avatarUrl });
+      
+      // Remove existing filter of same type
+      activeFilters = activeFilters.filter(f => f.type !== type);
+      
+      // Add new filter if value provided
+      if (value && value.trim()) {
+        activeFilters.push({ type, value: value.trim(), label, avatarUrl });
+      }
+      
+      console.log(`🔧 Updated activeFilters:`, activeFilters);
+      
       updateSearchBoxForFilters();
       executeSearch();
     };
     
-    const removeFilter = (filterToRemove) => {
-      activeFilters = [];
+    const removeFilter = (type) => {
+      activeFilters = activeFilters.filter(f => f.type !== type);
       updateSearchBoxForFilters();
       executeSearch();
     };
     
     const clearAllFilters = () => {
       activeFilters = [];
+      searchBox.value = '';
       updateSearchBoxForFilters();
       executeSearch();
     };
     
+    const getFilterByType = (type) => {
+      return activeFilters.find(f => f.type === type);
+    };
+    
     const updateSearchBoxForFilters = () => {
-      if (activeFilters.length > 0) {
-        // Block editing and show filter as value
-        const filter = activeFilters[0]; // Just take the first one for simplicity
-        
-        // Clear any existing avatar
+      // Check for author filter first (priority display)
+      const authorFilter = getFilterByType('author');
+      const textFilter = getFilterByType('text');
+      
+      if (authorFilter) {
+        // Show author filter with avatar
         const existingAvatar = searchContainer.querySelector('.filter-avatar');
         if (existingAvatar) {
           existingAvatar.remove();
         }
         
         // Add avatar if available
-        if (filter.avatarUrl) {
+        if (authorFilter.avatarUrl) {
           const avatar = document.createElement('img');
-          avatar.src = filter.avatarUrl;
+          avatar.src = authorFilter.avatarUrl;
           avatar.className = 'filter-avatar';
           avatar.style.cssText = `
             position: absolute;
@@ -1283,36 +1365,45 @@ class XSavedContentScript {
             z-index: 1;
           `;
           
-          // Handle broken images
           avatar.onerror = () => {
             avatar.style.display = 'none';
           };
           
           searchContainer.appendChild(avatar);
-          
-          // Adjust search box padding to make room for avatar
           searchBox.style.paddingLeft = '36px';
         } else {
-          searchBox.style.paddingLeft = '';
+          searchBox.style.paddingLeft = '8px';
         }
         
-        searchBox.value = filter.label + ' (click to remove)';
+        searchBox.value = authorFilter.label + ' (click to remove)';
         searchBox.readOnly = true;
         searchBox.style.color = '#60A5FA';
         searchBox.style.cursor = 'pointer';
         
-        // Add remove functionality on click
         searchBox.onclick = () => {
-          removeFilter(filter);
+          removeFilter('author');
         };
-      } else {
-        // Remove avatar if it exists
+      } else if (textFilter) {
+        // Show text in search box normally
         const existingAvatar = searchContainer.querySelector('.filter-avatar');
         if (existingAvatar) {
           existingAvatar.remove();
         }
         
-        // Restore normal editing
+        searchBox.value = textFilter.value;
+        searchBox.readOnly = false;
+        searchBox.style.color = 'white';
+        searchBox.style.cursor = 'text';
+        searchBox.style.paddingLeft = '8px';
+        searchBox.placeholder = 'Search bookmarks... (use @ for authors)';
+        searchBox.onclick = null;
+      } else {
+        // No filters - restore default
+        const existingAvatar = searchContainer.querySelector('.filter-avatar');
+        if (existingAvatar) {
+          existingAvatar.remove();
+        }
+        
         searchBox.value = '';
         searchBox.readOnly = false;
         searchBox.style.color = 'white';
@@ -1324,7 +1415,7 @@ class XSavedContentScript {
     };
     
     const executeSearch = () => {
-      // Create search query
+      // Build unified search query from all active filters
       const searchQuery = {
         limit: PAGINATION_CONFIG.INITIAL_LOAD,
         offset: 0,
@@ -1332,30 +1423,30 @@ class XSavedContentScript {
         sortOrder: this.currentSort?.order || 'desc'
       };
       
-      if (activeFilters.length > 0) {
-        // Filter mode - only use filter, ignore text
-        const filter = activeFilters[0];
-        if (filter.type === 'author') {
-          searchQuery.author = filter.value;
+      // Apply all active filters
+      activeFilters.forEach(filter => {
+        switch (filter.type) {
+          case 'text':
+            searchQuery.text = filter.value;
+            break;
+          case 'author':
+            searchQuery.author = filter.value;
+            break;
+          case 'tag':
+            searchQuery.tags = searchQuery.tags || [];
+            searchQuery.tags.push(filter.value);
+            break;
+          // Future: date ranges, media filters, etc.
         }
-        console.log(`🔍 Filter search query:`, searchQuery);
-      } else {
-        // Normal text search mode
-        const searchText = searchBox.value.trim();
-        if (searchText) {
-          searchQuery.text = searchText;
-        }
-        console.log(`🔍 Text search query:`, searchQuery);
-      }
+      });
       
-      // Reset pagination and search
+      console.log(`🔍 Unified search query:`, searchQuery, 'from filters:', activeFilters);
+      console.log(`🔍 About to call loadBookmarksPage with query:`, JSON.stringify(searchQuery, null, 2));
+      
+      // Reset pagination and execute
       this.resetPagination();
       this.pagination.currentQuery = searchQuery;
-      
-      // Scroll to top of grid when searching
       this.scrollToTopOfGrid();
-      
-      // Load search results
       this.loadBookmarksPage(container, searchQuery, false);
     };
     
@@ -1477,16 +1568,23 @@ class XSavedContentScript {
     };
     
     const selectAuthor = (author, avatarUrl) => {
+      console.log(`👤 selectAuthor called:`, { author, avatarUrl });
+      
       // Clear the @ from search input if it exists
       const currentValue = searchBox.value;
       const atIndex = currentValue.lastIndexOf('@');
+      
+      // Remove text filter first (without triggering search)
       if (atIndex !== -1) {
-        // Remove the @ and everything after it
-        searchBox.value = currentValue.substring(0, atIndex).trim();
+        const remainingText = currentValue.substring(0, atIndex).trim();
+        activeFilters = activeFilters.filter(f => f.type !== 'text');
+        if (remainingText) {
+          activeFilters.push({ type: 'text', value: remainingText, label: remainingText });
+        }
       }
       
-      // Add author as a filter with avatar URL
-      addFilter('author', author, `@${author}`, avatarUrl);
+      // Add author filter (this will trigger search once)
+      updateFilter('author', author, `@${author}`, avatarUrl);
       
       hideAuthorDropdown();
       searchBox.focus();
@@ -1531,7 +1629,8 @@ class XSavedContentScript {
       // Debounce search to avoid excessive calls
       searchTimeout = setTimeout(() => {
         console.log(`🔍 Debounced search triggered for: "${query}"`);
-        executeSearch();
+        // Update text filter and execute search
+        updateFilter('text', query, query);
       }, 300); // 300ms delay
     });
     
@@ -2075,116 +2174,6 @@ class XSavedContentScript {
     console.log(`✅ Grid content updated with ${bookmarks.length} bookmarks`);
   }
 
-  /**
-   * Show sort menu dropdown
-   * @param {Element} sortButton - The sort button element
-   * @param {Array} bookmarks - Current bookmarks array
-   */
-  showSortMenu(sortButton, bookmarks) {
-    // Remove existing sort menu if any
-    const existingMenu = document.getElementById('xsaved-sort-menu');
-    if (existingMenu) {
-      existingMenu.remove();
-      return; // Toggle behavior - close if already open
-    }
-
-    // Track current sort state
-    this.currentSort = this.currentSort || { field: 'created_at', order: 'desc' };
-
-    // Create sort menu
-    const sortMenu = document.createElement('div');
-    sortMenu.id = 'xsaved-sort-menu';
-    sortMenu.style.cssText = `
-      position: absolute;
-      top: 100%;
-      right: 0;
-      background: #15202b;
-      border: 1px solid #38444d;
-      border-radius: 8px;
-      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
-      z-index: 10002;
-      min-width: 180px;
-      margin-top: 8px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    `;
-
-    const sortFields = [
-      { field: 'created_at', label: 'Created At' },
-      // TODO: Add bookmarked at when we have it properly fixed. Right now we have some problem with the 
-      // epoch and we are not having correct bookmarked at dates.
-      // { field: 'bookmarked_at', label: 'Bookmarked At' }    
-      ];
-
-    sortFields.forEach((fieldInfo, index) => {
-      const menuItem = document.createElement('div');
-      const isActive = this.currentSort.field === fieldInfo.field;
-      const currentOrder = isActive ? this.currentSort.order : 'desc';
-      const arrow = currentOrder === 'desc' ? '↓' : '↑';
-      
-      menuItem.style.cssText = `
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 12px 16px;
-        color: ${isActive ? '#3B82F6' : 'white'};
-        cursor: pointer;
-        transition: background-color 0.2s ease;
-        border-bottom: ${index < sortFields.length - 1 ? '1px solid #38444d' : 'none'};
-        background-color: ${isActive ? 'rgba(59, 130, 246, 0.1)' : 'transparent'};
-      `;
-
-      menuItem.innerHTML = `
-        <span style="font-size: 14px; font-weight: ${isActive ? '600' : '500'};">${fieldInfo.label}</span>
-        <span style="font-size: 16px; font-weight: bold; margin-left: 8px;">${arrow}</span>
-      `;
-
-      menuItem.addEventListener('mouseenter', () => {
-        if (!isActive) {
-          menuItem.style.backgroundColor = '#1a3a4a';
-        }
-      });
-
-      menuItem.addEventListener('mouseleave', () => {
-        menuItem.style.backgroundColor = isActive ? 'rgba(59, 130, 246, 0.1)' : 'transparent';
-      });
-
-      menuItem.addEventListener('click', () => {
-        // If clicking the same field, toggle order; if different field, use desc
-        let newOrder;
-        if (this.currentSort.field === fieldInfo.field) {
-          newOrder = this.currentSort.order === 'desc' ? 'asc' : 'desc';
-        } else {
-          newOrder = 'desc'; // Default to desc for new field
-        }
-        
-        const sortValue = `${fieldInfo.field}-${newOrder}`;
-        console.log('🔄 Sort option selected:', sortValue);
-        
-        // Update current sort state
-        this.currentSort = { field: fieldInfo.field, order: newOrder };
-        
-        this.applySorting(sortValue, bookmarks);
-        sortMenu.remove();
-      });
-
-      sortMenu.appendChild(menuItem);
-    });
-
-    // Position menu relative to sort button
-    sortButton.style.position = 'relative';
-    sortButton.appendChild(sortMenu);
-
-    // Close menu when clicking outside
-    setTimeout(() => {
-      const handleOutsideClick = (e) => {
-        if (!sortMenu.contains(e.target) && !sortButton.contains(e.target)) {
-          sortMenu.remove();
-          document.removeEventListener('click', handleOutsideClick);
-        }
-      };
-      document.addEventListener('click', handleOutsideClick);
-    }, 100);
-  }
 
   /**
    * Show sort menu dropdown with filter support
@@ -2306,49 +2295,6 @@ class XSavedContentScript {
     }
   }
 
-  /**
-   * Apply sorting to bookmarks and update grid
-   * @param {string} sortType - Sort type (created_at-desc, bookmarked_at-asc, etc.)
-   * @param {Array} bookmarks - Bookmarks to sort (optional, triggers fresh database query if not provided)
-   */
-  applySorting(sortType, bookmarks = null) {
-    // Parse sort type
-    const [sortBy, sortOrder] = sortType.split('-');
-    
-    // Update current sort state
-    this.currentSort = { field: sortBy, order: sortOrder };
-    
-    console.log(`🔄 Applying sorting: ${sortType}`);
-
-    // Check if we have an active search term - if so, always re-execute search with new sorting
-    const searchInput = document.querySelector('.xsaved-search-input');
-    const currentSearchTerm = searchInput ? searchInput.value.trim() : '';
-
-    // UNIFIED APPROACH: Always use the same flow for consistency
-    
-    // Create search query with sorting
-    const query = {
-      text: currentSearchTerm, // Empty string when no search
-      limit: this.getBookmarkLimit(), // Use same limit for both search and no-search
-      offset: 0,  // Reset to first page
-      sortBy: sortBy,
-      sortOrder: sortOrder
-    };
-
-    console.log(`🔄 Applying sorting: ${sortType} (search: "${currentSearchTerm || 'none'}")`);
-    
-    // Reset pagination and reload with new sorting
-    this.resetPagination();
-    this.pagination.currentQuery = query;
-    
-    const container = this.currentGridContainer;
-    if (container) {
-      this.loadBookmarksPage(container, query, false); // false = replace, not append
-      this.scrollToTopOfGrid();
-    } else {
-      console.error('❌ No grid container found for sorting');
-    }
-  }
 
   /**
    * Get currently filtered bookmarks based on active tag selection
@@ -2928,35 +2874,38 @@ class XSavedContentScript {
   }
 
   /**
-   * Filter bookmarks using database search with pagination (OPTIMIZED)
-   * FIXED: No longer destroys search input by using renderGrid instead of full rebuild
+   * @deprecated - Use executeSearch() instead. This method is kept for compatibility but should not be used.
    */
   filterBookmarksPage(query, container, bookmarks) {
-    console.log(`🔍 Search input: "${query}"`);
+    console.warn('🚨 filterBookmarksPage is deprecated. Use executeSearch() instead.');
+    return; // Method disabled
+    // removed by dead control flow
+{}
     
     // Create search query with current sorting
-    const searchQuery = {
-      text: query.trim(),
-      limit: PAGINATION_CONFIG.INITIAL_LOAD,
-      offset: 0,
-      sortBy: this.currentSort?.field || 'created_at',
-      sortOrder: this.currentSort?.order || 'desc'
-    };
+    // removed by dead control flow
+{}
     
-    console.log(`🔍 Search query:`, searchQuery);
+    // removed by dead control flow
+{}
     
     // Reset pagination and search
-    this.resetPagination();
-    this.pagination.currentQuery = searchQuery;
+    // removed by dead control flow
+{}
+    // removed by dead control flow
+{}
     
     // Scroll to top of grid when searching
-    this.scrollToTopOfGrid();
+    // removed by dead control flow
+{}
     
     // Load search results with pagination - use append=false to replace results
-    this.loadBookmarksPage(container, searchQuery, false);
+    // removed by dead control flow
+{}
     
     // No setTimeout needed - search input stays intact since we don't rebuild the entire DOM
-    return;
+    // removed by dead control flow
+{}
     
     // OLD CODE BELOW - keeping for reference but not executed
     // removed by dead control flow
