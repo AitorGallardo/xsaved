@@ -1688,11 +1688,9 @@ class XSavedContentScript {
     // Group bookmarks by date
     const groups = this.groupBookmarksByDateSimple(bookmarks);
     groups.forEach((group, index) => {
-      // Add separator between groups
-      if (index > 0) {
-        const sep = this.createDateSeparatorSimple(group.date);
-        gridEl.appendChild(sep);
-      }
+      // Always add date separator for each group
+      const sep = this.createDateSeparatorSimple(group.date);
+      gridEl.appendChild(sep);
 
       // Append cards
       group.bookmarks.forEach(b => {
