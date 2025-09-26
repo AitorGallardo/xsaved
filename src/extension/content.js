@@ -2624,13 +2624,14 @@ class XSavedContentScript {
     // Check if text needs truncation and add "more" link
     if (safeBookmark.text.length > maxTextLength) {
       const moreLink = document.createElement('span');
+      moreLink.className = 'xsaved-more-link';
       moreLink.style.cssText = `
-        color: #3498db;
+        color: var(--xsaved-primary-color);
         cursor: pointer;
         position: absolute;
         right: 0;
         bottom: 0;
-        background: linear-gradient(90deg, transparent, #1A1A1A 20%);
+        background: linear-gradient(90deg, transparent, var(--xsaved-surface-color) 20%);
         padding: 0 0 0 12px;
         font-size: 13px;
         font-weight: 600;
@@ -2641,11 +2642,11 @@ class XSavedContentScript {
       
       // Hover effect for better UX
       moreLink.addEventListener('mouseenter', () => {
-        moreLink.style.color = '#60a5fa';
+        moreLink.style.color = 'var(--xsaved-accent-color)';
       });
       
       moreLink.addEventListener('mouseleave', () => {
-        moreLink.style.color = '#3498db';
+        moreLink.style.color = 'var(--xsaved-primary-color)';
       });
       
       moreLink.addEventListener('click', (e) => {

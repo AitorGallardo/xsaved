@@ -198,7 +198,7 @@ export class ServiceWorkerExportManager {
     <meta charset="UTF-8">
     <title>XSaved Bookmarks Export</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 20px; }
         .bookmark { margin-bottom: 20px; padding: 10px; border: 1px solid #ddd; }
         .author { color: #666; font-size: 14px; }
         .tags { color: #888; font-size: 12px; }

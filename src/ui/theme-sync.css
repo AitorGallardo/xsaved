@@ -3,6 +3,36 @@
  * CSS Variables system that adapts to X.com theme
  */
 
+/* ===== BASE FONT SYSTEM ===== */
+/* Ensure all XSaved theme-aware components use system fonts consistently */
+.xsaved-save-dialog,
+.xsaved-save-dialog *,
+#xsaved-bookmarks-toggle,
+#xsaved-bookmarks-toggle *,
+#xsaved-grid-overlay,
+#xsaved-grid-overlay *,
+.xsaved-tag-input,
+.xsaved-search-input,
+.xsaved-tag-selector,
+.xsaved-filter-button,
+.xsaved-navbar,
+.xsaved-navbar *,
+.xsaved-header,
+.xsaved-header *,
+.xsaved-controls,
+.xsaved-controls *,
+#xsaved-fixed-header,
+#xsaved-fixed-header *,
+.tweet-card,
+.tweet-card *,
+.xsaved-more-link,
+.xsaved-author-dropdown,
+.xsaved-author-dropdown *,
+#xsaved-sort-menu,
+#xsaved-sort-menu * {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
 /* ===== THEME CSS VARIABLES ===== */
 :root {
   /* Default light theme values (fallback) - exact X.com colors */
@@ -295,6 +325,15 @@ button.xsaved-tag-selector * {
 /* Tweet Card Content */
 .tweet-card * {
   color: inherit !important;
+}
+
+/* Tweet Card More Link */
+.xsaved-more-link {
+  color: var(--xsaved-primary-color) !important;
+}
+
+.xsaved-more-link:hover {
+  color: var(--xsaved-accent-color) !important;
 }
 
 /* Scrollbars */

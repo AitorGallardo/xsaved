@@ -330,7 +330,7 @@ export class ExportManagerSW {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${title}</title>
     <style>
-        body { margin: 0; padding: 20px; font-family: Arial, sans-serif; }
+        body { margin: 0; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
         .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #1da1f2; padding-bottom: 20px; }
         .metadata { background: #f8f9fa; padding: 15px; margin-bottom: 30px; border-radius: 5px; }
         .bookmark { margin-bottom: 25px; padding: 15px; border: 1px solid #e1e8ed; border-radius: 8px; page-break-inside: avoid; }
