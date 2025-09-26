@@ -1069,6 +1069,12 @@ class XSavedContentScript {
       gap: 20px;
     `;
 
+    // TODO: TEMPORARILY DISABLED - Filters navbar (tag selectors) 
+    // This feature will be re-implemented in a future version with improved UX
+    // The tag filtering system needs to be redesigned to work better with the search functionality
+    // and provide a more intuitive user experience for organizing bookmarks by categories.
+    
+    /* 
     // Left side: Tag filters
     const tagSelector = document.createElement('div');
     tagSelector.style.cssText = `
@@ -1148,6 +1154,16 @@ class XSavedContentScript {
 
       tagSelector.appendChild(tagButton);
     });
+    */
+    
+    // Create placeholder for future tag filters
+    const tagSelector = document.createElement('div');
+    tagSelector.style.cssText = `
+      display: flex;
+      gap: 12px;
+      flex: 1;
+      padding-right: 20px;
+    `;
 
     // Right side: Search and Export
     const rightSide = document.createElement('div');
@@ -1227,6 +1243,12 @@ class XSavedContentScript {
       this.showSortMenuWithFilters(sortButton, executeSearch);
     });
 
+    // TODO: TEMPORARILY DISABLED - Export/Download button
+    // This feature will be re-implemented in a future version with enhanced export options
+    // The export system needs to be redesigned to support more formats, better filtering,
+    // and improved user experience for exporting bookmark collections.
+    
+    /*
     // Download button
     const downloadButton = document.createElement('button');
     downloadButton.innerHTML = `
@@ -1259,10 +1281,11 @@ class XSavedContentScript {
       console.log('📤 Download button clicked');
       this.showExportDialog(this.allBookmarks || []);
     });
+    */
 
     rightSide.appendChild(searchContainer);
     rightSide.appendChild(sortButton);
-    rightSide.appendChild(downloadButton);
+    // rightSide.appendChild(downloadButton); // Temporarily disabled
 
     header.appendChild(tagSelector);
     header.appendChild(rightSide);
