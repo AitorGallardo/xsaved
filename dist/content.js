@@ -3203,9 +3203,13 @@ class XSavedContentScript {
           // Let native bookmark action execute first
           console.log('Allowing native bookmark action to proceed...');
           
-          // Show our save dialog after delay
+          // AUTO-SAVE: Immediately save to IndexedDB with default tags
+          console.log('💾 Auto-saving bookmark to IndexedDB...');
+          this.autoSaveBookmark(tweetData);
+          
+          // Show our save dialog after delay for optional tagging
           setTimeout(() => {
-            console.log('🏷️ Showing save dialog...');
+            console.log('🏷️ Showing save dialog for optional tagging...');
             const syntheticEvent = {
               clientX: eventDetails.clientX,
               clientY: eventDetails.clientY,
@@ -3479,7 +3483,7 @@ class XSavedContentScript {
       <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
         <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
       </svg>
-      Save to XSaved
+      Bookmark Saved! Add Tags?
     `;
 
     const closeButton = document.createElement('button');
@@ -3752,7 +3756,7 @@ class XSavedContentScript {
     });
 
     const saveButton = document.createElement('button');
-    saveButton.textContent = 'Save';
+    saveButton.textContent = 'Add Tags';
     saveButton.style.cssText = `
       padding: 8px 20px;
       border: none;
@@ -3862,22 +3866,48 @@ class XSavedContentScript {
     return dialog;
   }
 
+  // AUTO-SAVE: Save bookmark immediately without user interaction
+  autoSaveBookmark(tweetData) {
+    console.log('💾 Auto-saving bookmark to IndexedDB:', { id: tweetData.id, text: tweetData.text?.substring(0, 50) });
+    
+    // Create bookmark entity with empty tags (user can add tags later via modal)
+    const bookmarkEntity = {
+      ...tweetData,
+      tags: [] // Default to empty tags for auto-save
+    };
+
+    // Send to service worker for immediate IndexedDB storage
+    safeRuntimeMessage({
+      action: 'saveBookmark',
+      bookmark: bookmarkEntity
+    }, (response) => {
+      if (response?.success) {
+        console.log('✅ Bookmark auto-saved successfully to IndexedDB');
+        // Update stats silently
+        this.updateStats();
+      } else {
+        console.error('❌ Auto-save failed:', response?.error || 'Unknown error');
+        // Don't show error to user for auto-save failures - they can still use the modal
+      }
+    });
+  }
+
   handleSaveBookmark(tweetData, tags, saveButton) {
-    console.log('💾 Saving bookmark with tags:', tags);
+    console.log('💾 Updating bookmark with tags:', tags);
     
     // Disable save button during save
     const originalText = saveButton.textContent;
-    saveButton.textContent = 'Saving...';
+    saveButton.textContent = 'Updating...';
     saveButton.disabled = true;
     saveButton.style.opacity = '0.7';
 
-          // Create bookmark entity - let service worker handle sortIndex parsing
-      const bookmarkEntity = {
-        ...tweetData,
-        tags
-      };
+    // Create bookmark entity - this will update the existing bookmark with tags
+    const bookmarkEntity = {
+      ...tweetData,
+      tags
+    };
 
-    // Send to service worker
+    // Send to service worker (this will update the existing bookmark)
     safeRuntimeMessage({
       action: 'saveBookmark',
       bookmark: bookmarkEntity
@@ -3886,7 +3916,7 @@ class XSavedContentScript {
         console.log('✅ Bookmark saved successfully');
         
         // Show success state
-        saveButton.textContent = '✓ Saved!';
+        saveButton.textContent = '✓ Updated!';
         saveButton.style.background = '#00ba7c';
         
         // Update stats
