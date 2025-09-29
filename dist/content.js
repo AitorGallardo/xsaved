@@ -166,6 +166,9 @@ class XSavedContentScript {
       // Get current stats from service worker
       await this.updateStats();
       
+      // Set up sync state monitoring
+      this.setupSyncStateListener();
+      
       // Initialize based on current page
       if (XSAVED_CONFIG.pages.isBookmarksPage()) {
         this.initializeBookmarksPage();
@@ -256,12 +259,90 @@ class XSavedContentScript {
         if (response?.success) {
           this.stats = response.stats;
           console.log('📊 Updated stats:', this.stats);
+          
+          // Update stats indicator if it exists
+          this.updateStatsIndicator();
         } else {
           console.warn('Failed to get stats from service worker');
         }
         resolve();
       });
     });
+  }
+
+  // ===== SYNC SPINNER MANAGEMENT =====
+  showSyncSpinner() {
+    const spinner = document.getElementById('xsaved-sync-spinner');
+    if (spinner) {
+      spinner.style.display = 'block';
+      console.log('🔄 Sync spinner shown');
+    }
+  }
+
+  hideSyncSpinner() {
+    const spinner = document.getElementById('xsaved-sync-spinner');
+    if (spinner) {
+      spinner.style.display = 'none';
+      console.log('⏹️ Sync spinner hidden');
+    }
+  }
+
+  updateStatsIndicator() {
+    const statsIndicator = document.getElementById('xsaved-stats-indicator');
+    if (statsIndicator && this.stats) {
+      statsIndicator.textContent = `${this.stats.totalBookmarks.toLocaleString()} saved`;
+    }
+  }
+
+  setupSyncStateListener() {
+    // Listen for sync state updates from the service worker
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (message.action === 'stateUpdate' && message.extractionState) {
+        this.handleSyncStateUpdate(message.extractionState);
+      }
+    });
+    
+    // Also periodically check sync state if on bookmarks page
+    if (XSAVED_CONFIG.pages.isBookmarksPage()) {
+      this.startSyncStateMonitoring();
+    }
+  }
+
+  handleSyncStateUpdate(extractionState) {
+    const { phase, isBackground } = extractionState;
+    
+    // Show spinner when sync is active
+    if (phase === 'twitter_api_fetch' || phase === 'indexeddb_save') {
+      this.showSyncSpinner();
+    } else if (phase === 'idle') {
+      // Hide spinner when sync completes
+      setTimeout(() => {
+        this.hideSyncSpinner();
+        // Update stats after sync completes
+        this.updateStats();
+      }, 1000);
+    }
+  }
+
+  startSyncStateMonitoring() {
+    // Check sync state every 2 seconds while on bookmarks page
+    const checkSyncState = () => {
+      if (!XSAVED_CONFIG.pages.isBookmarksPage()) {
+        return; // Stop monitoring if user navigated away
+      }
+      
+      chrome.runtime.sendMessage({ action: 'getProgress' }, (response) => {
+        if (response && response.extractionState) {
+          this.handleSyncStateUpdate(response.extractionState);
+        }
+        
+        // Continue monitoring
+        setTimeout(checkSyncState, 2000);
+      });
+    };
+    
+    // Start monitoring after a delay
+    setTimeout(checkSyncState, 2000);
   }
 
   // ===== BOOKMARKS PAGE FEATURES =====
@@ -669,6 +750,7 @@ class XSavedContentScript {
     
     // Create stats indicator (bookmark count)
     const statsIndicator = document.createElement('span');
+    statsIndicator.id = 'xsaved-stats-indicator';
     statsIndicator.style.cssText = `
       background: rgba(29, 161, 242, 0.2);
       padding: 4px 10px;
@@ -678,6 +760,33 @@ class XSavedContentScript {
       color: rgb(29, 161, 242);
     `;
     statsIndicator.textContent = this.stats ? `${this.stats.totalBookmarks} saved` : 'Loading...';
+    
+    // Create sync spinner
+    const syncSpinner = document.createElement('div');
+    syncSpinner.id = 'xsaved-sync-spinner';
+    syncSpinner.style.cssText = `
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(29, 161, 242, 0.2);
+      border-top: 2px solid rgb(29, 161, 242);
+      border-radius: 50%;
+      animation: xsaved-spin 1s linear infinite;
+      display: none;
+      margin-left: 8px;
+    `;
+    
+    // Add spinner animation CSS
+    if (!document.getElementById('xsaved-spinner-styles')) {
+      const spinnerStyles = document.createElement('style');
+      spinnerStyles.id = 'xsaved-spinner-styles';
+      spinnerStyles.textContent = `
+        @keyframes xsaved-spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `;
+      document.head.appendChild(spinnerStyles);
+    }
     
     // Add toggle event - IMMEDIATE ANIMATION (no waiting for grid load)
     toggleInput.addEventListener('change', (e) => {
@@ -698,9 +807,10 @@ class XSavedContentScript {
       }
     });
     
-    // Assemble toggle (no text labels, just toggle + count)
+    // Assemble toggle (no text labels, just toggle + count + spinner)
     toggleContainer.appendChild(toggleSwitch);
     toggleContainer.appendChild(statsIndicator);
+    toggleContainer.appendChild(syncSpinner);
     
     // Style the container to use flexbox layout
     container.style.cssText = `
@@ -992,6 +1102,22 @@ class XSavedContentScript {
 
   showGridInterface() {
     console.log('🏗️ Showing XSaved grid interface...');
+    
+    // Trigger quick delta sync when grid is activated
+    console.log('🚀 Grid activated - checking if quick delta sync needed');
+    chrome.runtime.sendMessage({ action: 'quickDeltaSync' }, (response) => {
+      if (response?.success) {
+        if (response.skipped) {
+          console.log(`⏸️ Quick sync skipped: ${response.message} (${response.reason})`);
+          // Don't show spinner if sync was skipped
+        } else {
+          console.log('✅ Quick sync completed on grid activation');
+          // Sync actually happened, spinner will be controlled by state monitoring
+        }
+      } else {
+        console.log('⚠️ Quick sync failed on grid activation:', response?.error);
+      }
+    });
     
     // TODO: Overlay UI Improvements
     // - Changed inset to 50px 0px 0px 0px to partially cover X.com bookmarks page

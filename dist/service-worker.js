@@ -4048,13 +4048,13 @@ console.log('📡 XSaved v2 Communicator utility loaded - ready for message pass
 // PROVEN SCHEDULING CONSTANTS (Keep from background.js)
 // ===============================
 const SCHEDULE_INTERVALS = {
-    FREQUENT: 5, // 5 minutes - when user is active
-    NORMAL: 15, // 15 minutes - default
-    INFREQUENT: 60, // 1 hour - when user is inactive
-    OFFLINE: 240 // 4 hours - when user seems offline
+    ACTIVE: 15, // 15 minutes - when user is on X.com
+    OFFLINE: 240 // 4 hours - when user is offline/away from X.com
 };
-const AUTOMATIC_MIN_FETCH_INTERVAL = SCHEDULE_INTERVALS.FREQUENT * 60 * 1000; // 5 minutes
-const AUTOMATIC_SCHEDULED_FETCH_INTERVAL_IN_MINUTES = SCHEDULE_INTERVALS.NORMAL; // 15 minutes
+// Different intervals for different purposes
+const QUICK_SYNC_MIN_INTERVAL = 10 * 1000; // 10 seconds minimum between quick syncs (grid toggle spam prevention)
+const AUTOMATIC_SCHEDULED_FETCH_INTERVAL_IN_MINUTES = SCHEDULE_INTERVALS.ACTIVE; // 15 minutes
+const AUTOMATIC_MIN_FETCH_INTERVAL = SCHEDULE_INTERVALS.ACTIVE * 60 * 1000; // 15 minutes for automatic scheduled fetches
 const MAX_RETRIES = 3;
 const RATE_LIMIT_DELAY = 1500; // 1.5 seconds
 const INITIAL_REQUESTS_LEFT = 20;
@@ -4064,7 +4064,7 @@ const MAX_BACKOFF_MINUTES = 240; // 4 hours max backoff
 // ===============================
 // STATE MANAGEMENT (Keep from background.js)
 // ===============================
-let currentScheduleInterval = SCHEDULE_INTERVALS.NORMAL;
+let currentScheduleInterval = SCHEDULE_INTERVALS.ACTIVE;
 let consecutiveFailures = 0;
 let lastUserActivity = Date.now();
 let authSession = null;
@@ -4072,6 +4072,8 @@ let isExtracting = false;
 let requestsLeft = INITIAL_REQUESTS_LEFT;
 let bookmarksTabId = null;
 let estimatedTotalBookmarks = 0;
+// Tab session tracking to prevent re-sync on navigation
+let activeTabs = new Set(); // Track tabs that have already triggered sync this session
 // Delta sync variables (Keep existing logic)
 let lastBookmarkId = null;
 let lastSyncTimestamp = null;
@@ -4204,6 +4206,34 @@ class ExtensionServiceWorker {
         });
         await extractAllBookmarks();
     }
+    // NEW: Quick delta sync for page loads and grid toggles
+    async quickDeltaSync() {
+        const now = Date.now();
+        // Prevent too frequent quick syncs (10 seconds minimum)
+        if (lastSyncTimestamp && (now - lastSyncTimestamp) < QUICK_SYNC_MIN_INTERVAL) {
+            console.log('⏸️ Quick sync skipped - too soon since last sync (10s minimum)');
+            return { skipped: true, reason: 'too_soon', message: 'Too soon since last sync' };
+        }
+        // Check if already extracting
+        if (isExtracting) {
+            console.log('⏸️ Quick sync skipped - extraction already in progress');
+            return { skipped: true, reason: 'already_extracting', message: 'Sync already in progress' };
+        }
+        // Check if user is logged in
+        const isLoggedIn = await this.checkXLoginStatus();
+        if (!isLoggedIn) {
+            console.log('⏸️ Quick sync skipped - user not logged in to X.com');
+            return { skipped: true, reason: 'not_logged_in', message: 'User not logged in to X.com' };
+        }
+        console.log('🚀 Quick delta sync triggered');
+        isDeltaSync = true;
+        updateExtractionState({
+            isBackground: true,
+            message: 'Quick sync: Checking for new bookmarks...'
+        });
+        await extractAllBookmarks();
+        return { skipped: false, message: 'Quick sync completed' };
+    }
     scheduleNextFetch() {
         // Clear any existing alarm
         chrome.alarms.clear('fetchBookmarks');
@@ -4215,14 +4245,9 @@ class ExtensionServiceWorker {
     updateScheduleInterval() {
         const timeSinceActivity = Date.now() - lastUserActivity;
         const oldInterval = currentScheduleInterval;
+        // Simplified: 15min if recent X.com activity, 4h if offline
         if (timeSinceActivity < USER_ACTIVITY_THRESHOLD) {
-            currentScheduleInterval = SCHEDULE_INTERVALS.FREQUENT;
-        }
-        else if (timeSinceActivity < USER_ACTIVITY_THRESHOLD * 2) {
-            currentScheduleInterval = SCHEDULE_INTERVALS.NORMAL;
-        }
-        else if (timeSinceActivity < USER_ACTIVITY_THRESHOLD * 4) {
-            currentScheduleInterval = SCHEDULE_INTERVALS.INFREQUENT;
+            currentScheduleInterval = SCHEDULE_INTERVALS.ACTIVE;
         }
         else {
             currentScheduleInterval = SCHEDULE_INTERVALS.OFFLINE;
@@ -4405,6 +4430,8 @@ const extractAllBookmarks = async () => {
             percentage: 100
         });
         console.log(`🎉 Extraction complete: ${allExtractedBookmarks.length} bookmarks saved to IndexedDB`);
+        // Auto-clear badge on successful completion
+        chrome.action.setBadgeText({ text: '' });
     }
     catch (error) {
         console.error('❌ Extraction failed:', error);
@@ -4428,6 +4455,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     switch (request.action) {
         case "startExtraction":
             handleStartExtraction(sendResponse, request.options);
+            return true;
+        case "quickDeltaSync":
+            handleQuickDeltaSync(sendResponse);
             return true;
         case "searchBookmarks":
             handleSearchBookmarks(request.query, sendResponse);
@@ -4459,6 +4489,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         case "clearCache":
             handleClearCache(sendResponse);
             return true;
+        case "clearBadge":
+            chrome.action.setBadgeText({ text: '' });
+            sendResponse({ success: true });
+            break;
+        case "retryFirstTimeSetup":
+            handleFirstTimeSetup();
+            sendResponse({ success: true });
+            break;
     }
 });
 const handleStartExtraction = async (sendResponse, options = {}) => {
@@ -4480,6 +4518,27 @@ const handleStartExtraction = async (sendResponse, options = {}) => {
         sendResponse({ success: false, error: error.message });
     }
 };
+const handleQuickDeltaSync = async (sendResponse) => {
+    try {
+        await serviceWorker.initialize();
+        const result = await serviceWorker.quickDeltaSync();
+        if (result && result.skipped) {
+            sendResponse({
+                success: true,
+                skipped: true,
+                reason: result.reason,
+                message: result.message
+            });
+        }
+        else {
+            sendResponse({ success: true, status: "quick_sync_completed" });
+        }
+    }
+    catch (error) {
+        console.error('Error in quick delta sync:', error);
+        sendResponse({ success: false, error: error.message });
+    }
+};
 const handleSearchBookmarks = async (query, sendResponse) => {
     try {
         console.log(`🔍 Service Worker search request:`, query);
@@ -4495,9 +4554,10 @@ const handleSearchBookmarks = async (query, sendResponse) => {
             // Fallback to chrome.storage.local search for testing
             console.log('🔍 Using fallback search (testing mode)');
             const result = await chrome.storage.local.get(null);
-            const bookmarks = Object.keys(result || {})
+            const data = result ?? {};
+            const bookmarks = Object.keys(data)
                 .filter(key => key.startsWith('bookmark_'))
-                .map(key => result[key])
+                .map(key => data[key])
                 .filter(bookmark => {
                 if (query.text) {
                     return bookmark.text.toLowerCase().includes(query.text.toLowerCase());
@@ -4609,7 +4669,8 @@ const handleGetStats = async (sendResponse) => {
             // Fallback to chrome.storage.local stats for testing
             console.log('📊 Using fallback stats (testing mode)');
             const result = await chrome.storage.local.get(null);
-            const bookmarkCount = Object.keys(result).filter(key => key.startsWith('bookmark_')).length;
+            const data = result ?? {};
+            const bookmarkCount = Object.keys(data).filter(key => key.startsWith('bookmark_')).length;
             sendResponse({
                 success: true,
                 stats: {
@@ -4685,6 +4746,98 @@ const handleClearCache = async (sendResponse) => {
         console.error('Error clearing cache:', error);
         sendResponse({ success: false, error: error.message });
     }
+};
+// ===============================
+// FIRST-TIME SETUP SYSTEM
+// ===============================
+const handleFirstTimeSetup = async () => {
+    console.log('🚀 Starting first-time setup process...');
+    try {
+        // Wait a bit for extension to fully initialize
+        await delay(2000);
+        // Check if user is logged into X.com
+        const isLoggedIn = await serviceWorker.checkXLoginStatus();
+        if (!isLoggedIn) {
+            console.log('❌ User not logged into X.com - showing login popup');
+            showFirstTimePopup('login_required', {
+                title: 'Welcome to XSaved!',
+                message: 'Please log into X.com (Twitter) to start syncing your bookmarks.',
+                action: 'Login to X.com',
+                actionUrl: 'https://x.com/login'
+            });
+            return;
+        }
+        // User is logged in - attempt first extraction
+        console.log('✅ User logged in - attempting first bookmark extraction');
+        showFirstTimePopup('extracting', {
+            title: 'Setting up XSaved...',
+            message: 'Extracting your bookmarks for the first time. This may take a few moments.',
+            progress: true
+        });
+        // Perform first extraction
+        await extractAllBookmarks();
+        // Check if extraction was successful
+        if (lastBookmarkId && lastSyncTimestamp) {
+            console.log('✅ First extraction successful');
+            showFirstTimePopup('success', {
+                title: 'Setup Complete!',
+                message: `Successfully imported your bookmarks. You can now access them anytime!`,
+                action: 'Open Bookmarks',
+                actionUrl: 'https://x.com/i/bookmarks'
+            });
+        }
+        else {
+            console.log('❌ First extraction failed');
+            showFirstTimePopup('extraction_failed', {
+                title: 'Setup Issues',
+                message: 'We encountered an issue importing your bookmarks. Please try manually syncing from the extension popup.',
+                action: 'Try Manual Sync'
+            });
+        }
+    }
+    catch (error) {
+        console.error('❌ First-time setup failed:', error);
+        if (error.message.includes('Rate limit')) {
+            showFirstTimePopup('rate_limited', {
+                title: 'Rate Limited',
+                message: 'X.com is limiting our requests. Please wait a few minutes and try syncing manually.',
+                action: 'Open Extension'
+            });
+        }
+        else if (error.message.includes('Network')) {
+            showFirstTimePopup('network_error', {
+                title: 'Network Error',
+                message: 'Unable to connect to X.com. Please check your internet connection and try again.',
+                action: 'Retry Setup'
+            });
+        }
+        else {
+            showFirstTimePopup('unknown_error', {
+                title: 'Setup Error',
+                message: 'An unexpected error occurred. You can still use the extension by manually syncing your bookmarks.',
+                action: 'Open Extension'
+            });
+        }
+    }
+};
+const showFirstTimePopup = (type, options) => {
+    // Create a notification or badge to alert user
+    chrome.action.setBadgeText({ text: '!' });
+    chrome.action.setBadgeBackgroundColor({ color: '#1DA1F2' });
+    // Store the setup state for popup to display
+    chrome.storage.local.set({
+        firstTimeSetup: {
+            type,
+            options,
+            timestamp: Date.now()
+        }
+    });
+    // Auto-open setup tab for user feedback
+    chrome.tabs.create({
+        url: chrome.runtime.getURL('src/ui/setup.html'),
+        active: true
+    });
+    console.log(`📢 First-time setup popup: ${type}`, options);
 };
 // ===============================
 // UTILITY FUNCTIONS (Keep + enhance)
@@ -4789,17 +4942,42 @@ chrome.runtime.onStartup.addListener(() => {
 });
 chrome.runtime.onInstalled.addListener(() => {
     console.log('🚀 Extension installed - initializing service worker');
-    serviceWorker.initialize();
+    serviceWorker.initialize().then(() => {
+        // Check if this is a fresh install (no previous sync state)
+        if (!lastBookmarkId && !lastSyncTimestamp) {
+            console.log('🆕 Fresh extension install detected - starting first-time setup');
+            handleFirstTimeSetup();
+        }
+    });
 });
 // Keep existing alarm and activity tracking
 // (Additional existing background.js logic will be adapted in subsequent files)
-// User activity tracking (keep from background.js)
+// User activity tracking + sync on first X.com tab open
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status === 'complete' && tab.url && tab.url.includes('x.com')) {
         lastUserActivity = Date.now();
-        console.log('👤 User activity detected on X.com');
+        console.log('👤 User activity detected on X.com - page loaded');
         // Update schedule interval based on activity
         serviceWorker.updateScheduleInterval();
+        // Only trigger sync on first X.com tab open (not on navigation)
+        if (!activeTabs.has(tabId)) {
+            activeTabs.add(tabId);
+            console.log('🚀 First X.com tab open - triggering sync');
+            // Use normal extraction (let initialization logic determine delta vs full sync)
+            serviceWorker.initialize().then(() => {
+                serviceWorker.checkXLoginStatus().then(isLoggedIn => {
+                    if (isLoggedIn) {
+                        // Don't force isDeltaSync - let loadSyncState() determine the correct mode
+                        extractAllBookmarks().catch(error => {
+                            console.error('❌ Sync failed on first tab open:', error);
+                        });
+                    }
+                });
+            });
+        }
+        else {
+            console.log('⏸️ X.com navigation detected - no sync needed');
+        }
     }
 });
 chrome.tabs.onActivated.addListener((activeInfo) => {
@@ -4809,6 +4987,13 @@ chrome.tabs.onActivated.addListener((activeInfo) => {
             serviceWorker.updateScheduleInterval();
         }
     });
+});
+// Clean up tab tracking when tabs are closed
+chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+    if (activeTabs.has(tabId)) {
+        activeTabs.delete(tabId);
+        console.log(`🧹 Cleaned up tab tracking for tab ${tabId}`);
+    }
 });
 console.log('📡 Enhanced Service Worker loaded - ready for initialization');
 // Inline Export Manager - No external dependencies
@@ -4943,7 +5128,7 @@ class InlineExportManager {
                 metadata: {
                     originalCount: bookmarks.length,
                     exportedCount: limitedBookmarks.length,
-                    limited: bookmarks.length > maxBookmarksForPDF
+                    limited: bookmarks.length > limits/* Limits */.xu.maxBookmarksForExport
                 }
             };
         }

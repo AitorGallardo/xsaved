@@ -57,6 +57,14 @@ module.exports = {
           to: 'src/ui/debug.js'
         },
         { 
+          from: 'src/ui/setup.html', 
+          to: 'src/ui/setup.html'
+        },
+        { 
+          from: 'src/ui/setup.js', 
+          to: 'src/ui/setup.js'
+        },
+        { 
           from: 'src/ui/styles.css', 
           to: 'src/ui/styles.css'
         },

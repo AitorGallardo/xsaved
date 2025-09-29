@@ -1,290 +1,203 @@
 /**
- * XSaved Extension v2 - Popup Interface
- * Modern UI with real-time data from service worker and IndexedDB
+ * XSaved Extension - Simplified Popup Interface
+ * Clean, focused UI with essential features only
  */
 
 class XSavedPopup {
   constructor() {
     this.isInitialized = false;
-    this.lastStats = null;
-    this.searchDebounceTimer = null;
+    this.isSyncing = false;
+    this.progressMonitor = null;
     
     // DOM elements
-    this.statusIndicator = document.getElementById('statusIndicator');
-    this.statusText = document.getElementById('statusText');
-    this.nextSync = document.getElementById('nextSync');
+    this.errorMessage = document.getElementById('errorMessage');
     this.bookmarkCount = document.getElementById('bookmarkCount');
     this.tagCount = document.getElementById('tagCount');
-    this.cacheHits = document.getElementById('cacheHits');
-    this.lastSyncTime = document.getElementById('lastSyncTime');
-    this.dbStatus = document.getElementById('dbStatus');
-    this.searchStatus = document.getElementById('searchStatus');
-    this.storageUsed = document.getElementById('storageUsed');
-    this.errorMessage = document.getElementById('errorMessage');
-    this.searchInput = document.getElementById('searchInput');
     this.syncButton = document.getElementById('syncButton');
-    this.searchButton = document.getElementById('searchButton');
-    this.settingsButton = document.getElementById('settingsButton');
     this.syncIcon = document.getElementById('syncIcon');
     this.syncText = document.getElementById('syncText');
+    this.progressSection = document.getElementById('progressSection');
+    this.progressText = document.getElementById('progressText');
+    this.progressCount = document.getElementById('progressCount');
+    this.progressFill = document.getElementById('progressFill');
   }
 
   async initialize() {
     if (this.isInitialized) return;
     
     try {
-      console.log('🚀 Initializing XSaved v2 Popup...');
+      console.log('🚀 Initializing XSaved Popup...');
       
       // Set up event listeners
       this.setupEventListeners();
       
       // Load initial data
-      await this.loadInitialData();
+      await this.loadStats();
       
-      // Start periodic updates
-      this.startPeriodicUpdates();
+      // Check if currently syncing
+      await this.checkSyncStatus();
       
       this.isInitialized = true;
       console.log('✅ Popup initialized successfully');
       
     } catch (error) {
       console.error('❌ Popup initialization failed:', error);
-      this.showError('Failed to initialize popup: ' + error.message);
+      this.showError('Failed to initialize: ' + error.message);
     }
   }
 
   setupEventListeners() {
     // Sync button
     this.syncButton.addEventListener('click', () => this.handleSync());
-    
-    // Search input with debouncing
-    this.searchInput.addEventListener('input', (e) => {
-      clearTimeout(this.searchDebounceTimer);
-      this.searchDebounceTimer = setTimeout(() => {
-        this.handleSearch(e.target.value);
-      }, 300);
-    });
-    
-    // Advanced search button
-    this.searchButton.addEventListener('click', () => this.handleAdvancedSearch());
-    
-    // Settings button
-    this.settingsButton.addEventListener('click', () => this.handleSettings());
-    
-    // Listen for service worker state updates
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-      if (message.action === 'stateUpdate') {
-        this.handleStateUpdate(message);
-      }
-    });
   }
 
-  async loadInitialData() {
-    try {
-      // Get service worker state and stats
-      await this.updateStats();
-      await this.updateStatus();
-      
-    } catch (error) {
-      console.error('❌ Failed to load initial data:', error);
-      this.showError('Failed to load data from service worker');
-    }
-  }
-
-  async updateStats() {
+  async loadStats() {
     try {
       const response = await chrome.runtime.sendMessage({ action: 'getStats' });
       
       if (response && response.success) {
-        this.lastStats = response.stats;
         this.renderStats(response.stats);
-        this.hideError();
       } else {
-        throw new Error(response?.error || 'Failed to get stats');
+        this.showError('Failed to load stats');
       }
-      
     } catch (error) {
-      console.error('❌ Error updating stats:', error);
-      this.showError('Failed to load statistics');
-      this.renderStats(null);
+      console.error('❌ Failed to load stats:', error);
+      this.showError('Failed to load stats: ' + error.message);
     }
   }
 
   renderStats(stats) {
-    if (!stats) {
-      this.bookmarkCount.textContent = '-';
-      this.tagCount.textContent = '-';
-      this.cacheHits.textContent = '-';
-      this.storageUsed.textContent = '-';
-      this.dbStatus.textContent = 'Error';
-      this.searchStatus.textContent = 'Error';
-      return;
-    }
-
-    // Main stats
     this.bookmarkCount.textContent = this.formatNumber(stats.totalBookmarks || 0);
     this.tagCount.textContent = this.formatNumber(stats.totalTags || 0);
-    this.cacheHits.textContent = this.formatNumber(stats.searchCache?.hits || 0);
-    
-    // Storage
-    this.storageUsed.textContent = this.formatBytes(stats.storageUsed || 0);
-    
-    // Component status
-    this.dbStatus.textContent = stats.totalBookmarks !== undefined ? '✅ Ready' : '❌ Error';
-    this.searchStatus.textContent = stats.searchCache ? '✅ Ready' : '❌ Error';
-    
-    // Last sync
-    if (stats.lastSync) {
-      this.lastSyncTime.textContent = this.formatRelativeTime(stats.lastSync);
-    } else {
-      this.lastSyncTime.textContent = 'Never';
-    }
   }
 
-  async updateStatus() {
+  async checkSyncStatus() {
     try {
-      const response = await chrome.runtime.sendMessage({ action: 'getState' });
+      const response = await chrome.runtime.sendMessage({ action: 'getProgress' });
       
-      if (response && response.success) {
-        this.renderStatus(response.state);
+      if (response && response.isExtracting) {
+        this.startSyncProgress();
       }
-      
     } catch (error) {
-      console.error('❌ Error updating status:', error);
-      this.renderStatus({ isRunning: false, error: 'Communication error' });
-    }
-  }
-
-  renderStatus(state) {
-    if (!state) {
-      this.setStatus('error', 'Unknown status');
-      return;
-    }
-
-    if (state.error) {
-      this.setStatus('error', `Error: ${state.error}`);
-      this.nextSync.textContent = '-';
-      return;
-    }
-
-    if (state.isRunning) {
-      this.setStatus('active', 'Syncing bookmarks...');
-      this.nextSync.textContent = 'Active';
-      this.setSyncButtonLoading(true);
-    } else {
-      this.setStatus('idle', 'Ready');
-      this.nextSync.textContent = state.nextRun ? this.formatRelativeTime(state.nextRun) : '-';
-      this.setSyncButtonLoading(false);
-    }
-  }
-
-  setStatus(type, text) {
-    this.statusIndicator.className = `status-indicator status-${type}`;
-    this.statusText.textContent = text;
-  }
-
-  setSyncButtonLoading(loading) {
-    if (loading) {
-      this.syncIcon.textContent = '⏳';
-      this.syncText.textContent = 'Syncing...';
-      this.syncButton.disabled = true;
-    } else {
-      this.syncIcon.textContent = '🔄';
-      this.syncText.textContent = 'Sync Now';
-      this.syncButton.disabled = false;
+      console.error('❌ Failed to check sync status:', error);
     }
   }
 
   async handleSync() {
+    if (this.isSyncing) return;
+    
     try {
-      this.setSyncButtonLoading(true);
+      this.startSyncProgress();
       
       const response = await chrome.runtime.sendMessage({ 
         action: 'startExtraction',
         options: { isDeltaSync: true }
       });
       
-      if (response && response.success) {
-        console.log('✅ Sync completed successfully');
-        // Stats will update automatically via state updates
-      } else {
+      if (!response || !response.success) {
         throw new Error(response?.error || 'Sync failed');
       }
       
     } catch (error) {
       console.error('❌ Sync failed:', error);
       this.showError('Sync failed: ' + error.message);
-      this.setSyncButtonLoading(false);
+      this.stopSyncProgress();
     }
   }
 
-  async handleSearch(query) {
-    if (!query || query.length < 2) return;
+  startSyncProgress() {
+    this.isSyncing = true;
     
-    try {
-      console.log('🔍 Searching for:', query);
-      
-      const response = await chrome.runtime.sendMessage({
-        action: 'searchBookmarks',
-        query: {
-          text: query,
-          limit: 10
+    // Update button state
+    this.syncButton.disabled = true;
+    this.syncIcon.classList.add('spinning');
+    this.syncText.textContent = 'Syncing...';
+    
+    // Show progress section
+    this.progressSection.classList.add('active');
+    this.progressText.textContent = 'Starting sync...';
+    this.progressCount.textContent = '0 bookmarks processed';
+    this.progressFill.style.width = '0%';
+    
+    // Start monitoring progress
+    this.startProgressMonitoring();
+  }
+
+  stopSyncProgress() {
+    this.isSyncing = false;
+    
+    // Update button state
+    this.syncButton.disabled = false;
+    this.syncIcon.classList.remove('spinning');
+    this.syncText.textContent = 'Sync Now';
+    
+    // Hide progress section
+    this.progressSection.classList.remove('active');
+    
+    // Stop monitoring
+    if (this.progressMonitor) {
+      clearTimeout(this.progressMonitor);
+      this.progressMonitor = null;
+    }
+    
+    // Clear badge
+    chrome.runtime.sendMessage({ action: 'clearBadge' });
+  }
+
+  startProgressMonitoring() {
+    const monitorProgress = () => {
+      chrome.runtime.sendMessage({ action: 'getProgress' }, (response) => {
+        if (response) {
+          this.updateProgress(response);
+          
+          if (response.isExtracting) {
+            // Continue monitoring
+            this.progressMonitor = setTimeout(monitorProgress, 1000);
+          } else {
+            // Sync completed
+            this.onSyncComplete();
+          }
         }
       });
-      
-      if (response && response.success) {
-        console.log(`✅ Found ${response.result?.results?.length || 0} bookmarks`);
-        // For now just log results - in a full implementation, 
-        // we might show results in a dropdown or redirect to a results page
-      } else {
-        console.error('❌ Search failed:', response?.error);
+    };
+    
+    // Start monitoring after a short delay
+    this.progressMonitor = setTimeout(monitorProgress, 1000);
+  }
+
+  updateProgress(response) {
+    const { extractionState, bookmarkCount = 0 } = response;
+    
+    if (extractionState) {
+      // Update progress text
+      if (extractionState.message) {
+        this.progressText.textContent = extractionState.message;
       }
       
-    } catch (error) {
-      console.error('❌ Search error:', error);
-    }
-  }
-
-  handleAdvancedSearch() {
-    // Instead of closing popup, redirect to X.com bookmarks page where our interface lives
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0] && tabs[0].url && tabs[0].url.includes('x.com')) {
-        // If already on X.com, navigate to bookmarks
-        chrome.tabs.update(tabs[0].id, { url: 'https://x.com/i/bookmarks' });
-      } else {
-        // Open X.com bookmarks in new tab
-        chrome.tabs.create({ url: 'https://x.com/i/bookmarks' });
+      // Update progress bar based on phase
+      if (extractionState.phase === 'twitter_api_fetch') {
+        this.progressFill.style.width = '30%';
+      } else if (extractionState.phase === 'indexeddb_save') {
+        this.progressFill.style.width = '70%';
       }
-    });
-  }
-
-  handleSettings() {
-    // Open extension options page or settings tab
-    chrome.runtime.openOptionsPage?.() || chrome.tabs.create({ 
-      url: chrome.runtime.getURL('src/ui/settings.html')
-    });
-  }
-
-  handleStateUpdate(message) {
-    // Real-time updates from service worker
-    if (message.extractionState) {
-      this.renderStatus(message.extractionState);
     }
     
-    // Refresh stats if extraction completed
-    if (message.extractionState?.phase === 'idle' && !message.isExtracting) {
-      setTimeout(() => this.updateStats(), 1000);
+    // Update total bookmark count
+    if (bookmarkCount > 0) {
+      this.progressCount.textContent = `${this.formatNumber(bookmarkCount)} bookmarks processed`;
     }
   }
 
-  startPeriodicUpdates() {
-    // Update stats every 30 seconds
-    setInterval(() => {
-      if (this.isInitialized) {
-        this.updateStats();
-        this.updateStatus();
-      }
-    }, 30000);
+  onSyncComplete() {
+    // Complete the progress bar
+    this.progressFill.style.width = '100%';
+    this.progressText.textContent = 'Sync complete!';
+    
+    // Wait a moment, then stop progress and refresh stats
+    setTimeout(async () => {
+      this.stopSyncProgress();
+      await this.loadStats();
+    }, 1500);
   }
 
   showError(message) {
@@ -292,44 +205,14 @@ class XSavedPopup {
     this.errorMessage.style.display = 'block';
     
     // Auto-hide after 5 seconds
-    setTimeout(() => this.hideError(), 5000);
-  }
-
-  hideError() {
-    this.errorMessage.style.display = 'none';
+    setTimeout(() => {
+      this.errorMessage.style.display = 'none';
+    }, 5000);
   }
 
   formatNumber(num) {
-    if (num >= 1000000) {
-      return (num / 1000000).toFixed(1) + 'M';
-    } else if (num >= 1000) {
-      return (num / 1000).toFixed(1) + 'K';
-    }
-    return num.toString();
-  }
-
-  formatBytes(bytes) {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-  }
-
-  formatRelativeTime(timestamp) {
-    const now = Date.now();
-    const time = typeof timestamp === 'string' ? new Date(timestamp).getTime() : timestamp;
-    const diffMs = Math.abs(now - time);
-    const diffMins = Math.floor(diffMs / (1000 * 60));
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    
-    return new Date(time).toLocaleDateString();
+    // Always show full numbers with comma separators
+    return num.toLocaleString();
   }
 }
 
@@ -345,4 +228,4 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
-console.log('📦 XSaved v2 Popup script loaded'); 
+console.log('📦 XSaved Popup script loaded');
