@@ -1103,27 +1103,6 @@ class XSavedContentScript {
   showGridInterface() {
     console.log('🏗️ Showing XSaved grid interface...');
     
-    // Trigger quick delta sync when grid is activated
-    console.log('🚀 Grid activated - checking if quick delta sync needed');
-    chrome.runtime.sendMessage({ action: 'quickDeltaSync' }, (response) => {
-      if (response?.success) {
-        if (response.skipped) {
-          console.log(`⏸️ Quick sync skipped: ${response.message} (${response.reason})`);
-          // Don't show spinner if sync was skipped
-        } else {
-          console.log('✅ Quick sync completed on grid activation');
-          // Sync actually happened, spinner will be controlled by state monitoring
-        }
-      } else {
-        console.log('⚠️ Quick sync failed on grid activation:', response?.error);
-      }
-    });
-    
-    // TODO: Overlay UI Improvements
-    // - Changed inset to 50px 0px 0px 0px to partially cover X.com bookmarks page
-    // - Disabled main page scrolling to prevent interference with overlay
-    // - Hidden X.com search input when overlay is active
-    
     // Create grid overlay
     const gridOverlay = document.createElement('div');
     gridOverlay.id = 'xsaved-grid-overlay';
@@ -1159,8 +1138,24 @@ class XSavedContentScript {
     // Render the static layout (navbar, search, tags)
     this.renderLayout(gridOverlay);
 
-    // Load bookmarks from service worker
+    // Load bookmarks immediately with existing data
     this.loadBookmarksGrid(gridOverlay);
+    
+    // Trigger quick delta sync in background and refresh if new data found
+    console.log('🚀 Grid activated - starting background sync');
+    chrome.runtime.sendMessage({ action: 'quickDeltaSync' }, (response) => {
+      if (response?.success) {
+        if (response.skipped) {
+          console.log(`⏸️ Quick sync skipped: ${response.message} (${response.reason})`);
+        } else {
+          console.log('✅ Quick sync completed - checking for grid refresh');
+          // Refresh the grid to show any new data
+          this.refreshGridAfterSync();
+        }
+      } else {
+        console.log('⚠️ Quick sync failed on grid activation:', response?.error);
+      }
+    });
   }
 
   /**
@@ -1935,6 +1930,44 @@ class XSavedContentScript {
     });
 
     console.log(`✅ Grid rendered with ${bookmarks.length} bookmarks`);
+  }
+
+  /**
+   * Refresh grid after background sync completes
+   * Only refreshes if we're currently showing the default view (no active filters)
+   */
+  refreshGridAfterSync() {
+    const gridOverlay = document.getElementById('xsaved-grid-overlay');
+    if (!gridOverlay) {
+      console.log('⚠️ Grid overlay not found, skipping refresh');
+      return;
+    }
+
+    // Only refresh if we're showing the default view (no active search/filters)
+    const hasActiveFilters = this.activeFilters && this.activeFilters.length > 0;
+    const hasActiveSearch = document.getElementById('xsaved-search-input')?.value?.trim();
+    
+    if (hasActiveFilters || hasActiveSearch) {
+      console.log('⏸️ Skipping grid refresh - user has active filters/search');
+      return;
+    }
+
+    console.log('🔄 Refreshing grid with latest data after sync');
+    
+    // Reset pagination and reload with fresh data
+    this.resetPagination();
+    
+    // Create fresh query for newest bookmarks
+    const query = { 
+      text: '', 
+      limit: PAGINATION_CONFIG.INITIAL_LOAD, 
+      offset: 0,
+      sortBy: 'created_at',
+      sortOrder: 'desc' 
+    };
+    
+    this.pagination.currentQuery = query;
+    this.loadBookmarksPage(gridOverlay, query, false); // false = replace existing data
   }
 
   hideGridInterface() {
