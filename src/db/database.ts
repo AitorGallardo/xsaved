@@ -270,6 +270,38 @@ export class XSavedDatabase extends Dexie {
   }
 
   /**
+   * Upsert a bookmark (insert or update if exists)
+   */
+  async upsertBookmark(bookmark: BookmarkEntity): Promise<DatabaseResult<BookmarkEntity>> {
+    try {
+      const { result, metrics } = await this.withPerformanceTracking(
+        'upsertBookmark',
+        () => this._upsertBookmarkInternal(bookmark)
+      );
+      
+      return { 
+        success: true, 
+        data: result,
+        metrics 
+      };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to upsert bookmark'
+      };
+    }
+  }
+
+  /**
+   * Internal bookmark upsert
+   */
+  private async _upsertBookmarkInternal(bookmark: BookmarkEntity): Promise<BookmarkEntity> {
+    await this.bookmarks.put(bookmark);
+    console.log(`✅ Bookmark upserted successfully: ${bookmark.id}`);
+    return bookmark;
+  }
+
+  /**
    * Get bookmark by ID
    */
   async getBookmark(id: string): Promise<DatabaseResult<BookmarkEntity | null>> {
@@ -891,6 +923,7 @@ export class XSavedDatabase extends Dexie {
   async getStats(): Promise<DatabaseResult<{
     totalBookmarks: number;
     totalTags: number;
+    uniqueTags: number;
     totalCollections: number;
     dbSize?: number;
   }>> {
@@ -898,15 +931,25 @@ export class XSavedDatabase extends Dexie {
       const { result, metrics } = await this.withPerformanceTracking(
         'getStats',
         async () => {
-          const [bookmarkCount, tagCount, collectionCount] = await Promise.all([
+          const [bookmarkCount, collectionCount, allBookmarks] = await Promise.all([
             this.bookmarks.count(),
-            this.tags.count(),
-            this.collections.count()
+            this.collections.count(),
+            this.bookmarks.toArray() // Get all bookmarks to count unique tags
           ]);
+
+          // Calculate unique tags from bookmark tags arrays
+          const allTags = new Set<string>();
+          allBookmarks.forEach(bookmark => {
+            if (bookmark.tags && Array.isArray(bookmark.tags)) {
+              bookmark.tags.forEach(tag => allTags.add(tag));
+            }
+          });
+
 
           return {
             totalBookmarks: bookmarkCount,
-            totalTags: tagCount,
+            totalTags: allTags.size, // For backward compatibility
+            uniqueTags: allTags.size, // Explicit unique tags count
             totalCollections: collectionCount
           };
         }

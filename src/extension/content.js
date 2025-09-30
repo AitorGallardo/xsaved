@@ -4128,7 +4128,6 @@ class XSavedContentScript {
   }
 
   handleSaveBookmark(tweetData, tags, saveButton) {
-    console.log('💾 Updating bookmark with tags:', tags);
     
     // Disable save button during save
     const originalText = saveButton.textContent;

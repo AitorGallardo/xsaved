@@ -304,7 +304,7 @@ const saveBookmarkToLocal = async (bookmark, userTags = []) => {
     // Save to IndexedDB (Component 1) - TEMPORARILY USE CHROME.STORAGE FOR TESTING
     if (serviceWorker.db) {
       console.log('💾 Using IndexedDB for bookmark storage');
-      const result = await serviceWorker.db.addBookmark(bookmarkEntity);
+      const result = await serviceWorker.db.upsertBookmark(bookmarkEntity);
       
       if (result.success) {
         console.log(`✅ Saved bookmark ${bookmark.id} to IndexedDB`);
@@ -316,7 +316,7 @@ const saveBookmarkToLocal = async (bookmark, userTags = []) => {
         return { 
           success: false, 
           error: result.error || 'IndexedDB save failed',
-          details: `Database addBookmark operation failed for bookmark ${bookmark.id}`
+          details: `Database upsertBookmark operation failed for bookmark ${bookmark.id}`
         };
       }
     } else {
@@ -662,7 +662,6 @@ const handleSearchAuthors = async (query, limit, sendResponse) => {
 
 const handleSaveBookmark = async (bookmark, sendResponse) => {
   try {
-    console.log('📝 Attempting to save bookmark:', { id: bookmark.id, text: bookmark.text?.substring(0, 50) });
     const result = await saveBookmarkToLocal(bookmark, bookmark.tags);
     
     if (result.success) {

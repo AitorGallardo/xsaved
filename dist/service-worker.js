@@ -407,6 +407,33 @@ class XSavedDatabase extends import_wrapper_prod {
         return bookmark;
     }
     /**
+     * Upsert a bookmark (insert or update if exists)
+     */
+    async upsertBookmark(bookmark) {
+        try {
+            const { result, metrics } = await this.withPerformanceTracking('upsertBookmark', () => this._upsertBookmarkInternal(bookmark));
+            return {
+                success: true,
+                data: result,
+                metrics
+            };
+        }
+        catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Failed to upsert bookmark'
+            };
+        }
+    }
+    /**
+     * Internal bookmark upsert
+     */
+    async _upsertBookmarkInternal(bookmark) {
+        await this.bookmarks.put(bookmark);
+        console.log(`✅ Bookmark upserted successfully: ${bookmark.id}`);
+        return bookmark;
+    }
+    /**
      * Get bookmark by ID
      */
     async getBookmark(id) {
@@ -931,14 +958,22 @@ class XSavedDatabase extends import_wrapper_prod {
     async getStats() {
         try {
             const { result, metrics } = await this.withPerformanceTracking('getStats', async () => {
-                const [bookmarkCount, tagCount, collectionCount] = await Promise.all([
+                const [bookmarkCount, collectionCount, allBookmarks] = await Promise.all([
                     this.bookmarks.count(),
-                    this.tags.count(),
-                    this.collections.count()
+                    this.collections.count(),
+                    this.bookmarks.toArray() // Get all bookmarks to count unique tags
                 ]);
+                // Calculate unique tags from bookmark tags arrays
+                const allTags = new Set();
+                allBookmarks.forEach(bookmark => {
+                    if (bookmark.tags && Array.isArray(bookmark.tags)) {
+                        bookmark.tags.forEach(tag => allTags.add(tag));
+                    }
+                });
                 return {
                     totalBookmarks: bookmarkCount,
-                    totalTags: tagCount,
+                    totalTags: allTags.size, // For backward compatibility
+                    uniqueTags: allTags.size, // Explicit unique tags count
                     totalCollections: collectionCount
                 };
             });
@@ -4281,7 +4316,7 @@ const saveBookmarkToLocal = async (bookmark, userTags = []) => {
         // Save to IndexedDB (Component 1) - TEMPORARILY USE CHROME.STORAGE FOR TESTING
         if (serviceWorker.db) {
             console.log('💾 Using IndexedDB for bookmark storage');
-            const result = await serviceWorker.db.addBookmark(bookmarkEntity);
+            const result = await serviceWorker.db.upsertBookmark(bookmarkEntity);
             if (result.success) {
                 console.log(`✅ Saved bookmark ${bookmark.id} to IndexedDB`);
                 extractionState.bookmarkCount++;
@@ -4293,7 +4328,7 @@ const saveBookmarkToLocal = async (bookmark, userTags = []) => {
                 return {
                     success: false,
                     error: result.error || 'IndexedDB save failed',
-                    details: `Database addBookmark operation failed for bookmark ${bookmark.id}`
+                    details: `Database upsertBookmark operation failed for bookmark ${bookmark.id}`
                 };
             }
         }
