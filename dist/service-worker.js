@@ -4306,27 +4306,18 @@ class ExtensionServiceWorker {
 // ===============================
 const saveBookmarkToLocal = async (bookmark, userTags = []) => {
     try {
-        console.log('🔍 DEBUG saveBookmarkToLocal called with:');
-        console.log('  bookmark.id:', bookmark?.id);
-        console.log('  bookmark.tags:', bookmark?.tags);
-        console.log('  userTags parameter:', userTags);
-        console.log('  userTags type:', typeof userTags);
-        console.log('  userTags is array:', Array.isArray(userTags));
         // Ensure service worker is initialized
         await serviceWorker.initialize();
         // Determine final tags with detailed logging
         let finalTags;
         if (userTags && Array.isArray(userTags) && userTags.length > 0) {
             finalTags = userTags;
-            console.log('  ✅ Using userTags:', finalTags);
         }
         else if (bookmark.tags && Array.isArray(bookmark.tags) && bookmark.tags.length > 0) {
             finalTags = bookmark.tags;
-            console.log('  ⚠️ Falling back to bookmark.tags:', finalTags);
         }
         else {
             finalTags = [];
-            console.log('  ⚠️ No tags found, using empty array');
         }
         // Create BookmarkEntity for Component 1
         const bookmarkEntity = {
@@ -4341,8 +4332,6 @@ const saveBookmarkToLocal = async (bookmark, userTags = []) => {
             // Add search tokenization for Component 2
             textTokens: tokenizeText(bookmark.text || '')
         };
-        console.log('🔍 DEBUG bookmarkEntity created with tags:', bookmarkEntity.tags);
-        // Save to IndexedDB (Component 1) - TEMPORARILY USE CHROME.STORAGE FOR TESTING
         if (serviceWorker.db) {
             console.log('💾 Using IndexedDB for bookmark storage');
             const result = await serviceWorker.db.upsertBookmark(bookmarkEntity);
@@ -4441,16 +4430,9 @@ const extractAllBookmarks = async () => {
                         hasMore = false;
                         break;
                     }
-                    // Save to IndexedDB instead of server
-                    console.log('🔍 DEBUG EXTRACTION: About to save bookmark from Twitter API:', bookmark.id);
-                    console.log('🔍 DEBUG EXTRACTION: Bookmark tags from Twitter:', bookmark.tags);
                     // Check if this bookmark already exists with manual tags
                     const existingBookmark = await serviceWorker.db?.getBookmark(bookmark.id);
-                    if (existingBookmark?.success && existingBookmark.data?.tags?.length > 0) {
-                        console.log('⚠️ WARNING: Found existing bookmark with manual tags!');
-                        console.log('   Existing tags:', existingBookmark.data.tags);
-                        console.log('   Twitter API tags:', bookmark.tags);
-                        console.log('   📝 PRESERVING MANUAL TAGS instead of overwriting');
+                    if (existingBookmark?.success) {
                         // Preserve existing tags instead of overwriting with Twitter data
                         bookmark.tags = existingBookmark.data.tags;
                     }
@@ -4675,14 +4657,8 @@ const handleSearchAuthors = async (query, limit, sendResponse) => {
 };
 const handleSaveBookmark = async (bookmark, sendResponse) => {
     try {
-        console.log('🔍 DEBUG handleSaveBookmark called with:');
-        console.log('  bookmark.id:', bookmark?.id);
-        console.log('  bookmark.tags:', bookmark?.tags);
-        console.log('  bookmark object:', JSON.stringify(bookmark, null, 2));
         const result = await saveBookmarkToLocal(bookmark, bookmark.tags);
         if (result.success) {
-            console.log('✅ Bookmark saved successfully:', result.data?.id);
-            console.log('✅ Saved bookmark tags:', result.data?.tags);
             sendResponse({ success: true, bookmark: result.data });
         }
         else {

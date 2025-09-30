@@ -290,13 +290,10 @@ const saveBookmarkToLocal = async (bookmark, userTags = []) => {
     let finalTags;
     if (userTags && Array.isArray(userTags) && userTags.length > 0) {
       finalTags = userTags;
-      console.log('  ✅ Using userTags:', finalTags);
     } else if (bookmark.tags && Array.isArray(bookmark.tags) && bookmark.tags.length > 0) {
       finalTags = bookmark.tags;
-      console.log('  ⚠️ Falling back to bookmark.tags:', finalTags);
     } else {
       finalTags = [];
-      console.log('  ⚠️ No tags found, using empty array');
     }
     
     // Create BookmarkEntity for Component 1
@@ -316,7 +313,6 @@ const saveBookmarkToLocal = async (bookmark, userTags = []) => {
     
 
     
-    // Save to IndexedDB (Component 1) - TEMPORARILY USE CHROME.STORAGE FOR TESTING
     if (serviceWorker.db) {
       console.log('💾 Using IndexedDB for bookmark storage');
       const result = await serviceWorker.db.upsertBookmark(bookmarkEntity);
@@ -428,7 +424,6 @@ const extractAllBookmarks = async () => {
           // Check if this bookmark already exists with manual tags
           const existingBookmark = await serviceWorker.db?.getBookmark(bookmark.id);
           if (existingBookmark?.success && existingBookmark.data?.tags?.length > 0) {
-            
             // Preserve existing tags instead of overwriting with Twitter data
             bookmark.tags = existingBookmark.data.tags;
           }
@@ -684,16 +679,10 @@ const handleSearchAuthors = async (query, limit, sendResponse) => {
 
 const handleSaveBookmark = async (bookmark, sendResponse) => {
   try {
-    console.log('🔍 DEBUG handleSaveBookmark called with:');
-    console.log('  bookmark.id:', bookmark?.id);
-    console.log('  bookmark.tags:', bookmark?.tags);
-    console.log('  bookmark object:', JSON.stringify(bookmark, null, 2));
     
     const result = await saveBookmarkToLocal(bookmark, bookmark.tags);
     
     if (result.success) {
-      console.log('✅ Bookmark saved successfully:', result.data?.id);
-      console.log('✅ Saved bookmark tags:', result.data?.tags);
       sendResponse({ success: true, bookmark: result.data });
     } else {
       console.error('❌ Bookmark save failed:', result.error);

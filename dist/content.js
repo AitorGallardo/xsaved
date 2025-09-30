@@ -4145,8 +4145,6 @@ class XSavedContentScript {
   }
 
   handleSaveBookmark(tweetData, tags, saveButton) {
-
-    
     // Disable save button during save
     const originalText = saveButton.textContent;
     saveButton.textContent = 'Updating...';
@@ -4158,11 +4156,6 @@ class XSavedContentScript {
       ...tweetData,
       tags
     };
-
-    console.log('🔍 DEBUG bookmarkEntity created in content.js:');
-    console.log('  bookmarkEntity.id:', bookmarkEntity.id);
-    console.log('  bookmarkEntity.tags:', bookmarkEntity.tags);
-    console.log('  full bookmarkEntity:', JSON.stringify(bookmarkEntity, null, 2));
 
     // Send to service worker (this will update the existing bookmark)
     safeRuntimeMessage({
