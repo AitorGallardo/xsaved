@@ -429,8 +429,16 @@ class XSavedDatabase extends import_wrapper_prod {
      * Internal bookmark upsert
      */
     async _upsertBookmarkInternal(bookmark) {
+        console.log('🔍 DEBUG _upsertBookmarkInternal called with:');
+        console.log('  bookmark.id:', bookmark.id);
+        console.log('  bookmark.tags:', bookmark.tags);
+        console.log('  bookmark.tags type:', typeof bookmark.tags);
+        console.log('  bookmark.tags is array:', Array.isArray(bookmark.tags));
         await this.bookmarks.put(bookmark);
         console.log(`✅ Bookmark upserted successfully: ${bookmark.id}`);
+        // Verify what was actually stored
+        const stored = await this.bookmarks.get(bookmark.id);
+        console.log('🔍 DEBUG Verification - stored bookmark tags:', stored?.tags);
         return bookmark;
     }
     /**
@@ -4298,8 +4306,28 @@ class ExtensionServiceWorker {
 // ===============================
 const saveBookmarkToLocal = async (bookmark, userTags = []) => {
     try {
+        console.log('🔍 DEBUG saveBookmarkToLocal called with:');
+        console.log('  bookmark.id:', bookmark?.id);
+        console.log('  bookmark.tags:', bookmark?.tags);
+        console.log('  userTags parameter:', userTags);
+        console.log('  userTags type:', typeof userTags);
+        console.log('  userTags is array:', Array.isArray(userTags));
         // Ensure service worker is initialized
         await serviceWorker.initialize();
+        // Determine final tags with detailed logging
+        let finalTags;
+        if (userTags && Array.isArray(userTags) && userTags.length > 0) {
+            finalTags = userTags;
+            console.log('  ✅ Using userTags:', finalTags);
+        }
+        else if (bookmark.tags && Array.isArray(bookmark.tags) && bookmark.tags.length > 0) {
+            finalTags = bookmark.tags;
+            console.log('  ⚠️ Falling back to bookmark.tags:', finalTags);
+        }
+        else {
+            finalTags = [];
+            console.log('  ⚠️ No tags found, using empty array');
+        }
         // Create BookmarkEntity for Component 1
         const bookmarkEntity = {
             id: bookmark.id,
@@ -4308,11 +4336,12 @@ const saveBookmarkToLocal = async (bookmark, userTags = []) => {
             avatar_url: bookmark.avatar_url || null,
             created_at: bookmark.created_at ? normalizeDateToISO(bookmark.created_at) : null, // CRITICAL: Normalize date format for consistent sorting
             bookmarked_at: bookmark.sortIndex ? getSortIndexDateISO(bookmark.sortIndex) : null,
-            tags: userTags.length > 0 ? userTags : (bookmark.tags || []),
+            tags: finalTags,
             media_urls: bookmark.media_urls || [],
             // Add search tokenization for Component 2
             textTokens: tokenizeText(bookmark.text || '')
         };
+        console.log('🔍 DEBUG bookmarkEntity created with tags:', bookmarkEntity.tags);
         // Save to IndexedDB (Component 1) - TEMPORARILY USE CHROME.STORAGE FOR TESTING
         if (serviceWorker.db) {
             console.log('💾 Using IndexedDB for bookmark storage');
@@ -4413,6 +4442,18 @@ const extractAllBookmarks = async () => {
                         break;
                     }
                     // Save to IndexedDB instead of server
+                    console.log('🔍 DEBUG EXTRACTION: About to save bookmark from Twitter API:', bookmark.id);
+                    console.log('🔍 DEBUG EXTRACTION: Bookmark tags from Twitter:', bookmark.tags);
+                    // Check if this bookmark already exists with manual tags
+                    const existingBookmark = await serviceWorker.db?.getBookmark(bookmark.id);
+                    if (existingBookmark?.success && existingBookmark.data?.tags?.length > 0) {
+                        console.log('⚠️ WARNING: Found existing bookmark with manual tags!');
+                        console.log('   Existing tags:', existingBookmark.data.tags);
+                        console.log('   Twitter API tags:', bookmark.tags);
+                        console.log('   📝 PRESERVING MANUAL TAGS instead of overwriting');
+                        // Preserve existing tags instead of overwriting with Twitter data
+                        bookmark.tags = existingBookmark.data.tags;
+                    }
                     await saveBookmarkToLocal(bookmark);
                     allExtractedBookmarks.push(bookmark);
                     // Update newest bookmark ID
@@ -4634,9 +4675,14 @@ const handleSearchAuthors = async (query, limit, sendResponse) => {
 };
 const handleSaveBookmark = async (bookmark, sendResponse) => {
     try {
+        console.log('🔍 DEBUG handleSaveBookmark called with:');
+        console.log('  bookmark.id:', bookmark?.id);
+        console.log('  bookmark.tags:', bookmark?.tags);
+        console.log('  bookmark object:', JSON.stringify(bookmark, null, 2));
         const result = await saveBookmarkToLocal(bookmark, bookmark.tags);
         if (result.success) {
             console.log('✅ Bookmark saved successfully:', result.data?.id);
+            console.log('✅ Saved bookmark tags:', result.data?.tags);
             sendResponse({ success: true, bookmark: result.data });
         }
         else {

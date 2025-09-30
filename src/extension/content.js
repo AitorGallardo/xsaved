@@ -4221,7 +4221,6 @@ class XSavedContentScript {
   }
 
   handleSaveBookmark(tweetData, tags, saveButton) {
-    
     // Disable save button during save
     const originalText = saveButton.textContent;
     saveButton.textContent = 'Updating...';

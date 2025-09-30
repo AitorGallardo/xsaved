@@ -281,9 +281,23 @@ class ExtensionServiceWorker {
 const saveBookmarkToLocal = async (bookmark, userTags = []) => {
   try {
 
+
     
     // Ensure service worker is initialized
     await serviceWorker.initialize();
+    
+    // Determine final tags with detailed logging
+    let finalTags;
+    if (userTags && Array.isArray(userTags) && userTags.length > 0) {
+      finalTags = userTags;
+      console.log('  ✅ Using userTags:', finalTags);
+    } else if (bookmark.tags && Array.isArray(bookmark.tags) && bookmark.tags.length > 0) {
+      finalTags = bookmark.tags;
+      console.log('  ⚠️ Falling back to bookmark.tags:', finalTags);
+    } else {
+      finalTags = [];
+      console.log('  ⚠️ No tags found, using empty array');
+    }
     
     // Create BookmarkEntity for Component 1
     const bookmarkEntity = {
@@ -293,11 +307,12 @@ const saveBookmarkToLocal = async (bookmark, userTags = []) => {
       avatar_url: bookmark.avatar_url || null,
       created_at: bookmark.created_at ? normalizeDateToISO(bookmark.created_at) : null, // CRITICAL: Normalize date format for consistent sorting
       bookmarked_at: bookmark.sortIndex ? getSortIndexDateISO(bookmark.sortIndex) : null,
-      tags: userTags.length > 0 ? userTags : (bookmark.tags || []),
+      tags: finalTags,
       media_urls: bookmark.media_urls || [],
       // Add search tokenization for Component 2
       textTokens: tokenizeText(bookmark.text || '')
     };
+    
     
 
     
@@ -410,7 +425,14 @@ const extractAllBookmarks = async () => {
             break;
           }
           
-          // Save to IndexedDB instead of server
+          // Check if this bookmark already exists with manual tags
+          const existingBookmark = await serviceWorker.db?.getBookmark(bookmark.id);
+          if (existingBookmark?.success && existingBookmark.data?.tags?.length > 0) {
+            
+            // Preserve existing tags instead of overwriting with Twitter data
+            bookmark.tags = existingBookmark.data.tags;
+          }
+          
           await saveBookmarkToLocal(bookmark);
           allExtractedBookmarks.push(bookmark);
           
@@ -662,10 +684,16 @@ const handleSearchAuthors = async (query, limit, sendResponse) => {
 
 const handleSaveBookmark = async (bookmark, sendResponse) => {
   try {
+    console.log('🔍 DEBUG handleSaveBookmark called with:');
+    console.log('  bookmark.id:', bookmark?.id);
+    console.log('  bookmark.tags:', bookmark?.tags);
+    console.log('  bookmark object:', JSON.stringify(bookmark, null, 2));
+    
     const result = await saveBookmarkToLocal(bookmark, bookmark.tags);
     
     if (result.success) {
       console.log('✅ Bookmark saved successfully:', result.data?.id);
+      console.log('✅ Saved bookmark tags:', result.data?.tags);
       sendResponse({ success: true, bookmark: result.data });
     } else {
       console.error('❌ Bookmark save failed:', result.error);

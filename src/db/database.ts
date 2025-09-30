@@ -296,8 +296,19 @@ export class XSavedDatabase extends Dexie {
    * Internal bookmark upsert
    */
   private async _upsertBookmarkInternal(bookmark: BookmarkEntity): Promise<BookmarkEntity> {
+    console.log('🔍 DEBUG _upsertBookmarkInternal called with:');
+    console.log('  bookmark.id:', bookmark.id);
+    console.log('  bookmark.tags:', bookmark.tags);
+    console.log('  bookmark.tags type:', typeof bookmark.tags);
+    console.log('  bookmark.tags is array:', Array.isArray(bookmark.tags));
+    
     await this.bookmarks.put(bookmark);
     console.log(`✅ Bookmark upserted successfully: ${bookmark.id}`);
+    
+    // Verify what was actually stored
+    const stored = await this.bookmarks.get(bookmark.id);
+    console.log('🔍 DEBUG Verification - stored bookmark tags:', stored?.tags);
+    
     return bookmark;
   }
 
