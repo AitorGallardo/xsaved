@@ -4634,7 +4634,6 @@ const handleSearchAuthors = async (query, limit, sendResponse) => {
 };
 const handleSaveBookmark = async (bookmark, sendResponse) => {
     try {
-        console.log('📝 Attempting to save bookmark:', { id: bookmark.id, text: bookmark.text?.substring(0, 50) });
         const result = await saveBookmarkToLocal(bookmark, bookmark.tags);
         if (result.success) {
             console.log('✅ Bookmark saved successfully:', result.data?.id);

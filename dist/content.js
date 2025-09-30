@@ -2614,16 +2614,95 @@ class XSavedContentScript {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     `;
 
+    // Create tag overlay (only if bookmark has tags)
+    let tagOverlay = null;
+    if (safeBookmark.tags && safeBookmark.tags.length > 0) {
+      tagOverlay = document.createElement('div');
+      tagOverlay.className = 'xsaved-tag-overlay';
+      tagOverlay.style.cssText = `
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+        color: white;
+        display: none;
+        flex-direction: column;
+        justify-content: flex-end;
+        align-items: flex-start;
+        z-index: 50;
+        border-radius: 0 0 6px 6px;
+        padding: 12px;
+        box-sizing: border-box;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        height: 60px;
+        pointer-events: none;
+      `;
+
+      const tagsContainer = document.createElement('div');
+      tagsContainer.style.cssText = `
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        max-width: 100%;
+        overflow: hidden;
+      `;
+
+      // Limit to first 3 tags to keep it discrete
+      const visibleTags = safeBookmark.tags.slice(0, 3);
+      visibleTags.forEach(tag => {
+        const tagElement = document.createElement('span');
+        tagElement.style.cssText = `
+          background: rgba(29, 161, 242, 0.9);
+          color: white;
+          padding: 2px 6px;
+          border-radius: 8px;
+          font-size: 10px;
+          font-weight: 500;
+          white-space: nowrap;
+        `;
+        tagElement.textContent = `#${tag}`;
+        tagsContainer.appendChild(tagElement);
+      });
+
+      // Show "+X more" if there are more than 3 tags
+      if (safeBookmark.tags.length > 3) {
+        const moreElement = document.createElement('span');
+        moreElement.style.cssText = `
+          background: rgba(255, 255, 255, 0.2);
+          color: white;
+          padding: 2px 6px;
+          border-radius: 8px;
+          font-size: 10px;
+          font-weight: 500;
+          white-space: nowrap;
+        `;
+        moreElement.textContent = `+${safeBookmark.tags.length - 3}`;
+        tagsContainer.appendChild(moreElement);
+      }
+
+      tagOverlay.appendChild(tagsContainer);
+      card.appendChild(tagOverlay);
+    }
+
     // Hover effect
     card.addEventListener('mouseenter', () => {
       card.style.transform = 'translateY(-5px)';
       card.style.zIndex = '10000';
       card.style.boxShadow = '0 8px 15px rgba(0, 0, 0, 0.3)';
+      if (tagOverlay) {
+        tagOverlay.style.display = 'flex';
+      }
+      xIcon.style.display = 'flex';
     });
 
     card.addEventListener('mouseleave', () => {
       card.style.transform = 'translateY(0)';
       card.style.boxShadow = '0 4px 10px rgba(0, 0, 0, 0.8)';
+      if (tagOverlay) {
+        tagOverlay.style.display = 'none';
+      }
+      xIcon.style.display = 'none';
     });
 
     // X icon - show on hover
@@ -2640,7 +2719,7 @@ class XSavedContentScript {
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      z-index: 10;
+      z-index: 200;
       transition: background-color 0.2s ease;
     `;
     
@@ -2803,6 +2882,8 @@ class XSavedContentScript {
         font-weight: 600;
         border-radius: 3px;
         transition: color 0.2s ease;
+        z-index: 100;
+        pointer-events: auto;
       `;
       moreLink.innerHTML = '<small>more</small>';
       
@@ -2912,7 +2993,7 @@ class XSavedContentScript {
       display: flex;
       justify-content: center;
       align-items: center;
-      z-index: 10000;
+      z-index: 2147483647;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     `;
 
@@ -3092,10 +3173,22 @@ class XSavedContentScript {
           border-radius: 16px;
           font-size: 14px;
           font-weight: 500;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         `;
         tagElement.textContent = `#${tag}`;
         tagsSection.appendChild(tagElement);
       });
+    } else {
+      // Show placeholder if no tags
+      const noTagsElement = document.createElement('span');
+      noTagsElement.style.cssText = `
+        color: rgba(255, 255, 255, 0.4);
+        font-size: 14px;
+        font-style: italic;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      `;
+      noTagsElement.textContent = 'No tags';
+      tagsSection.appendChild(noTagsElement);
     }
 
     // Timestamp
@@ -4052,7 +4145,6 @@ class XSavedContentScript {
   }
 
   handleSaveBookmark(tweetData, tags, saveButton) {
-    console.log('💾 Updating bookmark with tags:', tags);
     
     // Disable save button during save
     const originalText = saveButton.textContent;
