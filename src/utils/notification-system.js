@@ -125,18 +125,48 @@ export const initializeNotificationSystem = () => {
     
     .xsaved-toast-progress {
       width: 100%;
-      height: 4px;
+      height: 6px;
       background-color: var(--bg-secondary, #2a2a2a);
-      border-radius: 2px;
+      border-radius: 3px;
       overflow: hidden;
       margin-top: 8px;
+      position: relative;
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
     }
     
     .xsaved-toast-progress-bar {
       height: 100%;
-      background-color: currentColor;
-      transition: width 0.3s ease;
-      border-radius: 2px;
+      background: linear-gradient(90deg, 
+        currentColor 0%, 
+        color-mix(in srgb, currentColor 80%, white 20%) 50%, 
+        currentColor 100%);
+      transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 3px;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .xsaved-toast-progress-bar::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, 
+        transparent 0%, 
+        rgba(255, 255, 255, 0.2) 50%, 
+        transparent 100%);
+      animation: toastProgressShimmer 1.8s infinite;
+    }
+    
+    @keyframes toastProgressShimmer {
+      0% {
+        left: -100%;
+      }
+      100% {
+        left: 100%;
+      }
     }
     
     .xsaved-toast-details {

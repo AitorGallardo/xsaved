@@ -114,7 +114,7 @@ export class SelectionManager {
       </div>
       <div class="xsaved-selection-actions">
         <button class="xsaved-selection-btn select-all">Select All</button>
-        <button class="xsaved-selection-btn select-none">Select None</button>
+        <button class="xsaved-selection-btn select-none">Clear</button>
         <button class="xsaved-selection-btn danger delete-selected" disabled>
           🗑️ Delete Selected
         </button>
