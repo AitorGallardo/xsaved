@@ -2871,7 +2871,10 @@ class XSavedContentScript {
     // X icon click handler
     xIcon.addEventListener('click', (e) => {
       e.stopPropagation();
-      window.open(`https://x.com/i/web/status/${safeBookmark.id}`, '_blank');
+      // Only open tweet if not in selection mode
+      if (!this.selectionManager?.isSelectionMode) {
+        window.open(`https://x.com/i/web/status/${safeBookmark.id}`, '_blank');
+      }
     });
 
     // Tweet content container
@@ -3086,10 +3089,7 @@ class XSavedContentScript {
     card.appendChild(xIcon);
     card.appendChild(contentContainer);
 
-    // Click to open original tweet
-    card.addEventListener('click', () => {
-      window.open(`https://x.com/i/web/status/${safeBookmark.id}`, '_blank');
-    });
+    // Card click handling is now managed by event delegation in selection manager
 
     return card;
   }

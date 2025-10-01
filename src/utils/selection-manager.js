@@ -53,8 +53,42 @@ export class SelectionManager {
     this.gridContainer = gridContainer;
     this.createSelectionToolbar();
     this.attachEventListeners();
+    this.setupEventDelegation();
     
     console.log('✅ Selection Manager UI initialized');
+  }
+
+  /**
+   * Set up event delegation for card clicks
+   */
+  setupEventDelegation() {
+    if (!this.gridContainer) return;
+    
+    // Use event delegation to handle all card clicks
+    this.gridContainer.addEventListener('click', (e) => {
+      // Skip if clicking on checkbox or X icon
+      if (e.target.closest('.xsaved-selection-checkbox') || e.target.closest('svg')) {
+        return;
+      }
+      
+      // Find the closest tweet card
+      const card = e.target.closest('.tweet-card');
+      if (!card) return;
+      
+      const bookmarkId = card.dataset.bookmarkId || card.dataset.tweetId;
+      if (!bookmarkId) return;
+      
+      // If in selection mode, handle selection
+      if (this.isSelectionMode) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.toggleBookmarkSelection(bookmarkId);
+        return;
+      }
+      
+      // Otherwise, navigate to tweet
+      window.open(`https://x.com/i/web/status/${bookmarkId}`, '_blank');
+    });
   }
 
   /**
@@ -198,17 +232,10 @@ export class SelectionManager {
         checkbox.dataset.bookmarkId = bookmarkId;
         card.appendChild(checkbox);
         
-        // Add click handler
+        // Add click handler for checkbox only
         checkbox.addEventListener('click', (e) => {
           e.stopPropagation();
           this.toggleBookmarkSelection(bookmarkId);
-        });
-        
-        // Also allow clicking on the card itself
-        card.addEventListener('click', (e) => {
-          if (this.isSelectionMode && !e.target.closest('.xsaved-selection-checkbox')) {
-            this.toggleBookmarkSelection(bookmarkId);
-          }
         });
       }
     });
