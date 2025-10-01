@@ -4,7 +4,7 @@
  * Adapted from proven v1 extension with enhancements for IndexedDB integration
  */
 
-import { NetworkError, RateLimitError } from './helpers.js';
+import { NetworkError, RateLimitError, delay } from './helpers.js';
 
 // Constants
 const TWITTER_URL = 'https://x.com';

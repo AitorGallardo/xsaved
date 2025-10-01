@@ -3076,7 +3076,7 @@ const searchEngine = new SearchEngine();
  * @param {Number} ms - Milliseconds to delay
  * @returns {Promise} Promise that resolves after the delay
  */
-const helpers_delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
  * Create a retry function with exponential backoff
@@ -3123,7 +3123,7 @@ const withRetry = (fn, options = {}) => {
           : exponentialDelay;
         
         // Wait before retrying
-        await helpers_delay(finalDelay);
+        await delay(finalDelay);
       }
     }
     
@@ -4827,7 +4827,7 @@ const extractAllBookmarks = async () => {
                 }
                 // Delay between requests
                 if (hasMore) {
-                    await helpers_delay(RATE_LIMIT_DELAY);
+                    await delay(RATE_LIMIT_DELAY);
                 }
             }
             catch (error) {
@@ -4841,7 +4841,7 @@ const extractAllBookmarks = async () => {
                     console.error('❌ Max retries reached, stopping extraction');
                     break;
                 }
-                await helpers_delay(RATE_LIMIT_DELAY * retryCount);
+                await delay(RATE_LIMIT_DELAY * retryCount);
             }
         }
         // Update sync state (keep existing logic)
@@ -5189,7 +5189,7 @@ const handleFirstTimeSetup = async () => {
     console.log('🚀 Starting first-time setup process...');
     try {
         // Wait a bit for extension to fully initialize
-        await helpers_delay(2000);
+        await delay(2000);
         // Check if user is logged into X.com
         const isLoggedIn = await serviceWorker.checkXLoginStatus();
         if (!isLoggedIn) {
