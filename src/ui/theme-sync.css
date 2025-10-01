@@ -205,14 +205,18 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--xsaved-primary-color) 20%, transparent) !important;
 }
 
-/* Navbar/Header styling for tag selectors */
+/* Navbar/Header styling for tag selectors with frosted glass effect */
 .xsaved-navbar,
 .xsaved-header,
 .xsaved-controls,
 #xsaved-fixed-header {
-  background: var(--xsaved-bg-color) !important;
+  background: color-mix(in srgb, var(--xsaved-bg-color) 20%, transparent) !important;
   color: var(--xsaved-text-color) !important;
-  border-bottom: 1px solid var(--xsaved-border-color) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--xsaved-border-color) 50%, transparent) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+  box-shadow: 0 8px 32px color-mix(in srgb, var(--xsaved-bg-color) 30%, transparent) !important;
+  transition: all 0.3s ease !important;
 }
 
 /* Ensure all text elements in navbar inherit the theme colors */
