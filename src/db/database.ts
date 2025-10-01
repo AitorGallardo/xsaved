@@ -155,10 +155,12 @@ export class XSavedDatabase extends Dexie {
       console.log(`🔄 Updating bookmark: ${primKey}`, modifications);
       
       // Auto-regenerate textTokens if any searchable field was modified
-      if (modifications.text !== undefined || modifications.author !== undefined || modifications.tags !== undefined) {
+      const mods = modifications as Partial<BookmarkEntity>;
+      if (mods.text !== undefined || mods.author !== undefined || mods.tags !== undefined) {
         // Merge current object with modifications to get full context
-        const updatedObj = { ...obj, ...modifications };
-        modifications.textTokens = this.tokenizeBookmark(updatedObj);
+        const currentObj = obj as BookmarkEntity;
+        const updatedObj = { ...currentObj, ...mods };
+        mods.textTokens = this.tokenizeBookmark(updatedObj);
         console.log(`🔄 Regenerated textTokens for bookmark: ${primKey}`);
       }
     });
@@ -391,6 +393,136 @@ export class XSavedDatabase extends Dexie {
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to delete bookmark'
+      };
+    }
+  }
+
+  /**
+   * Delete multiple bookmarks by IDs with cleanup
+   * @param {string[]} ids - Array of bookmark IDs to delete
+   * @returns {Promise<DatabaseResult<{deleted: number, failed: string[]}>>}
+   */
+  async deleteBulkBookmarks(ids: string[]): Promise<DatabaseResult<{deleted: number, failed: string[]}>> {
+    try {
+      const { result, metrics } = await this.withPerformanceTracking(
+        'deleteBulkBookmarks',
+        async () => {
+          const failed: string[] = [];
+          let deleted = 0;
+
+          // Use Dexie transaction for atomicity
+          await this.transaction('rw', this.bookmarks, this.searchIndex, async () => {
+            for (const id of ids) {
+              try {
+                // Delete from bookmarks table
+                await this.bookmarks.delete(id);
+                
+                // Clean up search index
+                await this.searchIndex.delete(id);
+                
+                deleted++;
+                console.log(`✅ Bulk deleted bookmark: ${id}`);
+              } catch (error) {
+                console.warn(`⚠️ Failed to delete bookmark ${id}:`, error);
+                failed.push(id);
+              }
+            }
+          });
+
+          return { deleted, failed };
+        }
+      );
+      
+      console.log(`✅ Bulk delete completed: ${result.deleted} deleted, ${result.failed.length} failed`);
+      
+      return { 
+        success: true, 
+        data: result,
+        metrics 
+      };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to delete bookmarks in bulk'
+      };
+    }
+  }
+
+  /**
+   * Delete bookmarks with tag cleanup
+   * Removes bookmarks and updates tag usage counts
+   * @param {string[]} ids - Array of bookmark IDs to delete
+   * @returns {Promise<DatabaseResult<{deleted: number, failed: string[], tagsUpdated: number}>>}
+   */
+  async deleteBookmarksWithTagCleanup(ids: string[]): Promise<DatabaseResult<{deleted: number, failed: string[], tagsUpdated: number}>> {
+    try {
+      const { result, metrics } = await this.withPerformanceTracking(
+        'deleteBookmarksWithTagCleanup',
+        async () => {
+          const failed: string[] = [];
+          let deleted = 0;
+          const tagUsageChanges = new Map<string, number>();
+
+          // First, collect tag usage data from bookmarks to be deleted
+          const bookmarksToDelete = await this.bookmarks.where('id').anyOf(ids).toArray();
+          
+          for (const bookmark of bookmarksToDelete) {
+            if (bookmark.tags && Array.isArray(bookmark.tags)) {
+              for (const tag of bookmark.tags) {
+                tagUsageChanges.set(tag, (tagUsageChanges.get(tag) || 0) + 1);
+              }
+            }
+          }
+
+          // Use transaction for atomicity
+          await this.transaction('rw', this.bookmarks, this.searchIndex, this.tags, async () => {
+            // Delete bookmarks and search index entries
+            for (const id of ids) {
+              try {
+                await this.bookmarks.delete(id);
+                await this.searchIndex.delete(id);
+                deleted++;
+              } catch (error) {
+                console.warn(`⚠️ Failed to delete bookmark ${id}:`, error);
+                failed.push(id);
+              }
+            }
+
+            // Update tag usage counts
+            for (const [tagName, decreaseCount] of tagUsageChanges) {
+              try {
+                const tag = await this.tags.get(tagName);
+                if (tag) {
+                  const newUsageCount = Math.max(0, tag.usageCount - decreaseCount);
+                  if (newUsageCount === 0) {
+                    // Remove tag if no longer used
+                    await this.tags.delete(tagName);
+                  } else {
+                    // Update usage count
+                    await this.tags.update(tagName, { usageCount: newUsageCount });
+                  }
+                }
+              } catch (error) {
+                console.warn(`⚠️ Failed to update tag usage for ${tagName}:`, error);
+              }
+            }
+          });
+
+          return { deleted, failed, tagsUpdated: tagUsageChanges.size };
+        }
+      );
+      
+      console.log(`✅ Delete with tag cleanup completed: ${result.deleted} deleted, ${result.tagsUpdated} tags updated`);
+      
+      return { 
+        success: true, 
+        data: result,
+        metrics 
+      };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to delete bookmarks with tag cleanup'
       };
     }
   }

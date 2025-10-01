@@ -9,6 +9,7 @@ import { NetworkError, RateLimitError } from './helpers.js';
 // Constants
 const TWITTER_URL = 'https://x.com';
 const BOOKMARK_ENDPOINT = `${TWITTER_URL}/i/api/graphql/QUjXply7fA7fk05FRyajEg/Bookmarks`;
+const DELETE_BOOKMARK_ENDPOINT = `${TWITTER_URL}/i/api/graphql/Wlmlj2-xzyS1GN3a6cj-mQ/DeleteBookmark`;
 
 /**
  * Main function to fetch bookmarks from X.com API
@@ -304,4 +305,218 @@ const checkNextCursor = (currentCursor, nextCursor) => {
   return nextCursor === currentCursor ? null : nextCursor;
 };
 
-console.log('📡 XSaved v2 Fetcher utility loaded - ready for X.com API integration'); 
+/**
+ * Delete a single bookmark from X.com API
+ * @param {string} tweetId - Tweet ID to remove from bookmarks
+ * @param {string|null} csrfTokenOverride - Optional CSRF token override
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+export const deleteBookmarkV2 = async (tweetId, csrfTokenOverride = null) => {
+  console.log(`🗑️ Deleting bookmark: ${tweetId}`);
+  
+  // Get CSRF token
+  let csrfToken = csrfTokenOverride;
+  if (!csrfToken) {
+    try {
+      csrfToken = await getCsrfToken();
+      if (!csrfToken) {
+        console.warn('⚠️ CSRF token not found for delete operation');
+        return { success: false, error: 'Authentication required' };
+      }
+    } catch (error) {
+      console.error('❌ Error getting CSRF token for delete:', error.message);
+      return { success: false, error: 'Authentication failed' };
+    }
+  }
+
+  // Construct headers required by X.com API (same as fetch)
+  const headers = {
+    "accept": "*/*",
+    "accept-language": "en-US,en;q=0.9",
+    "authorization": "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA",
+    "content-type": "application/json",
+    "x-twitter-active-user": "yes",
+    "x-twitter-auth-type": "OAuth2Session",
+    "x-twitter-client-language": "en",
+    "x-csrf-token": csrfToken,
+    "x-client-transaction-id": `${Date.now()}-${Math.random().toString(36).substring(2)}`,
+    "x-client-uuid": generateClientUUID()
+  };
+
+  // Request body for delete operation
+  const requestBody = {
+    variables: {
+      tweet_id: tweetId
+    },
+    queryId: "Wlmlj2-xzyS1GN3a6cj-mQ"
+  };
+
+  try {
+    console.log(`🌐 Making delete request to X.com API for tweet: ${tweetId}`);
+    
+    const response = await fetch(DELETE_BOOKMARK_ENDPOINT, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(requestBody),
+      referrer: `${TWITTER_URL}/i/bookmarks`,
+      referrerPolicy: "strict-origin-when-cross-origin",
+      mode: "cors",
+      credentials: "include",
+    });
+    
+    if (!response.ok) {
+      if (response.status === 429) {
+        throw new RateLimitError(`Rate limit reached during delete: ${response.status}`);
+      }
+      if (response.status === 404) {
+        // Bookmark might already be deleted - this is not necessarily an error
+        console.log(`⚠️ Bookmark ${tweetId} not found (may already be deleted)`);
+        return { success: true, alreadyDeleted: true };
+      }
+      throw new NetworkError(`HTTP error during delete! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    // Check if the response indicates success
+    if (data?.data?.bookmark_delete === "Done") {
+      console.log(`✅ Successfully deleted bookmark: ${tweetId}`);
+      return { success: true };
+    } else {
+      console.warn(`⚠️ Unexpected delete response for ${tweetId}:`, data);
+      return { success: false, error: 'Unexpected API response' };
+    }
+    
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      console.warn(`⚠️ Rate limit hit during delete of ${tweetId}`);
+      throw error;
+    }
+    
+    if (error instanceof NetworkError) {
+      console.error(`❌ Network error deleting ${tweetId}:`, error.message);
+      throw error;
+    }
+    
+    console.error(`❌ Unexpected error deleting bookmark ${tweetId}:`, error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Delete multiple bookmarks in batches with rate limiting
+ * @param {string[]} tweetIds - Array of tweet IDs to delete
+ * @param {Object} options - Configuration options
+ * @param {number} options.batchSize - Number of deletes per batch (default: 5)
+ * @param {number} options.delayBetweenBatches - Delay between batches in ms (default: 2000)
+ * @param {Function} options.onProgress - Progress callback (current, total, failed)
+ * @param {string|null} csrfTokenOverride - Optional CSRF token override
+ * @returns {Promise<{success: boolean, results: Array, summary: Object}>}
+ */
+export const deleteBulkBookmarksV2 = async (tweetIds, options = {}, csrfTokenOverride = null) => {
+  const {
+    batchSize = 5,
+    delayBetweenBatches = 2000,
+    onProgress = () => {}
+  } = options;
+
+  console.log(`🗑️ Starting bulk delete of ${tweetIds.length} bookmarks (batch size: ${batchSize})`);
+  
+  const results = [];
+  const summary = {
+    total: tweetIds.length,
+    successful: 0,
+    failed: 0,
+    alreadyDeleted: 0,
+    errors: []
+  };
+
+  // Process in batches to avoid rate limits
+  for (let i = 0; i < tweetIds.length; i += batchSize) {
+    const batch = tweetIds.slice(i, i + batchSize);
+    console.log(`🔄 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(tweetIds.length / batchSize)}`);
+    
+    // Process batch items in parallel (but limited by batch size)
+    const batchPromises = batch.map(async (tweetId) => {
+      try {
+        const result = await deleteBookmarkV2(tweetId, csrfTokenOverride);
+        
+        if (result.success) {
+          if (result.alreadyDeleted) {
+            summary.alreadyDeleted++;
+          } else {
+            summary.successful++;
+          }
+        } else {
+          summary.failed++;
+          summary.errors.push({ tweetId, error: result.error });
+        }
+        
+        return { tweetId, ...result };
+        
+      } catch (error) {
+        summary.failed++;
+        const errorMsg = error.message || 'Unknown error';
+        summary.errors.push({ tweetId, error: errorMsg });
+        
+        return { 
+          tweetId, 
+          success: false, 
+          error: errorMsg,
+          isRateLimit: error instanceof RateLimitError
+        };
+      }
+    });
+    
+    const batchResults = await Promise.all(batchPromises);
+    results.push(...batchResults);
+    
+    // Update progress
+    const completed = Math.min(i + batchSize, tweetIds.length);
+    onProgress(completed, tweetIds.length, summary.failed);
+    
+    // Check for rate limits in this batch
+    const rateLimitErrors = batchResults.filter(r => r.isRateLimit);
+    if (rateLimitErrors.length > 0) {
+      console.warn(`⚠️ Rate limit detected, extending delay for next batch`);
+      await delay(delayBetweenBatches * 2); // Double the delay
+    } else if (i + batchSize < tweetIds.length) {
+      // Normal delay between batches
+      await delay(delayBetweenBatches);
+    }
+  }
+
+  console.log(`✅ Bulk delete completed: ${summary.successful} successful, ${summary.failed} failed, ${summary.alreadyDeleted} already deleted`);
+  
+  return {
+    success: summary.failed === 0,
+    results,
+    summary
+  };
+};
+
+/**
+ * Check if a bookmark exists on X.com (useful before attempting delete)
+ * @param {string} tweetId - Tweet ID to check
+ * @returns {Promise<{exists: boolean, error?: string}>}
+ */
+export const checkBookmarkExists = async (tweetId) => {
+  try {
+    // We can use a lightweight API call to check if bookmark exists
+    // This is a simplified check - in practice, you might want to implement
+    // a more specific endpoint if available
+    console.log(`🔍 Checking if bookmark exists: ${tweetId}`);
+    
+    // For now, we'll assume it exists unless we get a 404 during delete
+    // A more sophisticated implementation could use the bookmarks fetch
+    // with a specific cursor or search
+    
+    return { exists: true };
+    
+  } catch (error) {
+    console.warn(`⚠️ Error checking bookmark existence for ${tweetId}:`, error);
+    return { exists: false, error: error.message };
+  }
+};
+
+console.log('📡 XSaved v2 Fetcher utility loaded - ready for X.com API integration (with delete support)'); 

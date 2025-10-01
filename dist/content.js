@@ -1,4 +1,892 @@
 /******/ (() => { // webpackBootstrap
+/******/ 	"use strict";
+
+;// ./src/utils/notification-system.js
+/**
+ * XSaved Extension v2 - Notification System
+ * Toast notifications and progress feedback for user actions
+ * Consistent with existing UI patterns
+ */
+
+/**
+ * Toast notification types
+ */
+const TOAST_TYPES = {
+  SUCCESS: 'success',
+  ERROR: 'error',
+  WARNING: 'warning',
+  INFO: 'info',
+  PROGRESS: 'progress'
+};
+
+/**
+ * Global notification container management
+ */
+let notificationContainer = null;
+
+/**
+ * Initialize notification system
+ * Creates the notification container if it doesn't exist
+ */
+const initializeNotificationSystem = () => {
+  if (notificationContainer) return;
+
+  notificationContainer = document.createElement('div');
+  notificationContainer.id = 'xsaved-notifications';
+  notificationContainer.className = 'xsaved-notification-container';
+  
+  // Add styles
+  const styles = `
+    .xsaved-notification-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 99999;
+      pointer-events: none;
+      max-width: 400px;
+    }
+    
+    .xsaved-toast {
+      background: var(--bg-primary, #1a1a1a);
+      border: 1px solid var(--border-color, #333);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      pointer-events: auto;
+      transform: translateX(100%);
+      transition: all 0.3s ease;
+      color: var(--text-primary, #fff);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      line-height: 1.4;
+      max-width: 100%;
+      word-wrap: break-word;
+    }
+    
+    .xsaved-toast.show {
+      transform: translateX(0);
+    }
+    
+    .xsaved-toast.success {
+      border-left: 4px solid #10b981;
+    }
+    
+    .xsaved-toast.error {
+      border-left: 4px solid #ef4444;
+    }
+    
+    .xsaved-toast.warning {
+      border-left: 4px solid #f59e0b;
+    }
+    
+    .xsaved-toast.info {
+      border-left: 4px solid #3b82f6;
+    }
+    
+    .xsaved-toast.progress {
+      border-left: 4px solid #8b5cf6;
+    }
+    
+    .xsaved-toast-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    
+    .xsaved-toast-title {
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .xsaved-toast-close {
+      background: none;
+      border: none;
+      color: var(--text-secondary, #999);
+      cursor: pointer;
+      font-size: 18px;
+      padding: 0;
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      transition: background-color 0.2s;
+    }
+    
+    .xsaved-toast-close:hover {
+      background-color: var(--bg-secondary, #2a2a2a);
+    }
+    
+    .xsaved-toast-message {
+      color: var(--text-secondary, #ccc);
+      margin-bottom: 8px;
+    }
+    
+    .xsaved-toast-progress {
+      width: 100%;
+      height: 4px;
+      background-color: var(--bg-secondary, #2a2a2a);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    
+    .xsaved-toast-progress-bar {
+      height: 100%;
+      background-color: currentColor;
+      transition: width 0.3s ease;
+      border-radius: 2px;
+    }
+    
+    .xsaved-toast-details {
+      font-size: 12px;
+      color: var(--text-tertiary, #888);
+      margin-top: 4px;
+    }
+  `;
+  
+  // Add styles to document
+  const styleSheet = document.createElement('style');
+  styleSheet.textContent = styles;
+  document.head.appendChild(styleSheet);
+  
+  // Add container to document
+  document.body.appendChild(notificationContainer);
+  
+  console.log('✅ XSaved notification system initialized');
+};
+
+/**
+ * Show a toast notification
+ * @param {Object} options - Notification options
+ * @param {string} options.type - Toast type (success, error, warning, info, progress)
+ * @param {string} options.title - Toast title
+ * @param {string} options.message - Toast message
+ * @param {number} options.duration - Auto-dismiss duration in ms (0 = no auto-dismiss)
+ * @param {boolean} options.closable - Whether to show close button
+ * @param {Function} options.onClose - Callback when toast is closed
+ * @returns {Object} Toast instance with update/close methods
+ */
+const showToast = (options) => {
+  const {
+    type = TOAST_TYPES.INFO,
+    title = '',
+    message = '',
+    duration = 5000,
+    closable = true,
+    onClose = () => {}
+  } = options;
+
+  // Initialize system if needed
+  if (!notificationContainer) {
+    initializeNotificationSystem();
+  }
+
+  // Create toast element
+  const toast = document.createElement('div');
+  toast.className = `xsaved-toast ${type}`;
+  
+  // Get icon for type
+  const getIcon = (toastType) => {
+    switch (toastType) {
+      case TOAST_TYPES.SUCCESS: return '✅';
+      case TOAST_TYPES.ERROR: return '❌';
+      case TOAST_TYPES.WARNING: return '⚠️';
+      case TOAST_TYPES.INFO: return 'ℹ️';
+      case TOAST_TYPES.PROGRESS: return '🔄';
+      default: return '';
+    }
+  };
+
+  // Build toast HTML
+  toast.innerHTML = `
+    <div class="xsaved-toast-header">
+      <div class="xsaved-toast-title">
+        <span>${getIcon(type)}</span>
+        <span>${title}</span>
+      </div>
+      ${closable ? '<button class="xsaved-toast-close" type="button">×</button>' : ''}
+    </div>
+    ${message ? `<div class="xsaved-toast-message">${message}</div>` : ''}
+    <div class="xsaved-toast-progress" style="display: none;">
+      <div class="xsaved-toast-progress-bar" style="width: 0%;"></div>
+    </div>
+    <div class="xsaved-toast-details" style="display: none;"></div>
+  `;
+
+  // Add to container
+  notificationContainer.appendChild(toast);
+
+  // Show animation
+  requestAnimationFrame(() => {
+    toast.classList.add('show');
+  });
+
+  // Close functionality
+  const closeToast = () => {
+    toast.classList.remove('show');
+    setTimeout(() => {
+      if (toast.parentNode) {
+        toast.parentNode.removeChild(toast);
+      }
+      onClose();
+    }, 300);
+  };
+
+  // Add close button listener
+  const closeButton = toast.querySelector('.xsaved-toast-close');
+  if (closeButton) {
+    closeButton.addEventListener('click', closeToast);
+  }
+
+  // Auto-dismiss
+  let autoCloseTimer = null;
+  if (duration > 0) {
+    autoCloseTimer = setTimeout(closeToast, duration);
+  }
+
+  // Return toast instance with control methods
+  return {
+    element: toast,
+    close: closeToast,
+    
+    // Update progress (for progress type toasts)
+    updateProgress: (current, total, details = '') => {
+      const progressContainer = toast.querySelector('.xsaved-toast-progress');
+      const progressBar = toast.querySelector('.xsaved-toast-progress-bar');
+      const detailsElement = toast.querySelector('.xsaved-toast-details');
+      
+      if (progressContainer && progressBar) {
+        progressContainer.style.display = 'block';
+        const percentage = Math.min(100, Math.max(0, (current / total) * 100));
+        progressBar.style.width = `${percentage}%`;
+        
+        if (detailsElement && details) {
+          detailsElement.style.display = 'block';
+          detailsElement.textContent = details;
+        }
+      }
+    },
+    
+    // Update message
+    updateMessage: (newMessage) => {
+      const messageElement = toast.querySelector('.xsaved-toast-message');
+      if (messageElement) {
+        messageElement.textContent = newMessage;
+      }
+    },
+    
+    // Update type and title
+    updateType: (newType, newTitle) => {
+      toast.className = `xsaved-toast ${newType} show`;
+      const titleElement = toast.querySelector('.xsaved-toast-title span:last-child');
+      const iconElement = toast.querySelector('.xsaved-toast-title span:first-child');
+      
+      if (titleElement) titleElement.textContent = newTitle;
+      if (iconElement) iconElement.textContent = getIcon(newType);
+    },
+    
+    // Cancel auto-close
+    cancelAutoClose: () => {
+      if (autoCloseTimer) {
+        clearTimeout(autoCloseTimer);
+        autoCloseTimer = null;
+      }
+    }
+  };
+};
+
+/**
+ * Show success notification
+ * @param {string} title - Success title
+ * @param {string} message - Success message
+ * @param {number} duration - Auto-dismiss duration
+ * @returns {Object} Toast instance
+ */
+const showSuccess = (title, message = '', duration = 4000) => {
+  return showToast({
+    type: TOAST_TYPES.SUCCESS,
+    title,
+    message,
+    duration
+  });
+};
+
+/**
+ * Show error notification
+ * @param {string} title - Error title
+ * @param {string} message - Error message
+ * @param {number} duration - Auto-dismiss duration (0 = no auto-dismiss)
+ * @returns {Object} Toast instance
+ */
+const showError = (title, message = '', duration = 0) => {
+  return showToast({
+    type: TOAST_TYPES.ERROR,
+    title,
+    message,
+    duration,
+    closable: true
+  });
+};
+
+/**
+ * Show warning notification
+ * @param {string} title - Warning title
+ * @param {string} message - Warning message
+ * @param {number} duration - Auto-dismiss duration
+ * @returns {Object} Toast instance
+ */
+const showWarning = (title, message = '', duration = 6000) => {
+  return showToast({
+    type: TOAST_TYPES.WARNING,
+    title,
+    message,
+    duration
+  });
+};
+
+/**
+ * Show info notification
+ * @param {string} title - Info title
+ * @param {string} message - Info message
+ * @param {number} duration - Auto-dismiss duration
+ * @returns {Object} Toast instance
+ */
+const showInfo = (title, message = '', duration = 5000) => {
+  return showToast({
+    type: TOAST_TYPES.INFO,
+    title,
+    message,
+    duration
+  });
+};
+
+/**
+ * Show progress notification
+ * @param {string} title - Progress title
+ * @param {string} message - Initial message
+ * @returns {Object} Toast instance with progress methods
+ */
+const showProgress = (title, message = '') => {
+  return showToast({
+    type: TOAST_TYPES.PROGRESS,
+    title,
+    message,
+    duration: 0, // Don't auto-dismiss progress toasts
+    closable: false
+  });
+};
+
+/**
+ * Clear all notifications
+ */
+const clearAllNotifications = () => {
+  if (notificationContainer) {
+    const toasts = notificationContainer.querySelectorAll('.xsaved-toast');
+    toasts.forEach(toast => {
+      toast.classList.remove('show');
+      setTimeout(() => {
+        if (toast.parentNode) {
+          toast.parentNode.removeChild(toast);
+        }
+      }, 300);
+    });
+  }
+};
+
+console.log('📢 XSaved notification system loaded');
+
+;// ./src/utils/selection-manager.js
+ /**
+ * XSaved Extension v2 - Selection Manager
+ * Handles bookmark selection mode and bulk operations
+ * Integrates with existing grid overlay and notification system
+ */
+
+
+
+/**
+ * Selection Manager Class
+ * Manages bookmark selection state and UI
+ */
+class SelectionManager {
+  constructor() {
+    this.isSelectionMode = false;
+    this.selectedBookmarks = new Set();
+    this.bookmarkElements = new Map(); // Map bookmark IDs to DOM elements
+    
+    // UI Elements
+    this.selectionToggle = null;
+    this.selectionToolbar = null;
+    this.bulkProgressModal = null;
+    
+    // Callback for button state updates
+    this.onSelectionModeChange = null;
+    
+    // Event handlers
+    this.boundHandlers = {
+      toggleSelection: this.toggleSelectionMode.bind(this),
+      selectAll: this.selectAll.bind(this),
+      selectNone: this.selectNone.bind(this),
+      deleteSelected: this.deleteSelected.bind(this),
+      cancelSelection: this.cancelSelection.bind(this)
+    };
+    
+    // Initialize notification system
+    initializeNotificationSystem();
+    
+    console.log('📋 Selection Manager initialized');
+  }
+
+  /**
+   * Initialize selection mode UI components
+   * @param {HTMLElement} gridContainer - The grid container element
+   */
+  initialize(gridContainer) {
+    this.gridContainer = gridContainer;
+    this.createSelectionToolbar();
+    this.attachEventListeners();
+    
+    console.log('✅ Selection Manager UI initialized');
+  }
+
+  /**
+   * Set callback for selection mode changes
+   * @param {Function} callback - Function to call when selection mode changes
+   */
+  setSelectionModeChangeCallback(callback) {
+    this.onSelectionModeChange = callback;
+  }
+
+
+  /**
+   * Create the selection toolbar (initially hidden)
+   */
+  createSelectionToolbar() {
+    if (this.selectionToolbar) return;
+
+    this.selectionToolbar = document.createElement('div');
+    this.selectionToolbar.className = 'xsaved-selection-toolbar';
+    this.selectionToolbar.innerHTML = `
+      <div class="xsaved-selection-count">
+        <span class="count">0</span> selected
+      </div>
+      <div class="xsaved-selection-actions">
+        <button class="xsaved-selection-btn select-all">Select All</button>
+        <button class="xsaved-selection-btn select-none">Select None</button>
+        <button class="xsaved-selection-btn danger delete-selected" disabled>
+          🗑️ Delete Selected
+        </button>
+        <button class="xsaved-selection-btn cancel">Cancel</button>
+      </div>
+    `;
+    
+    document.body.appendChild(this.selectionToolbar);
+  }
+
+  /**
+   * Attach event listeners to UI elements
+   */
+  attachEventListeners() {
+    if (this.selectionToolbar) {
+      const selectAllBtn = this.selectionToolbar.querySelector('.select-all');
+      const selectNoneBtn = this.selectionToolbar.querySelector('.select-none');
+      const deleteBtn = this.selectionToolbar.querySelector('.delete-selected');
+      const cancelBtn = this.selectionToolbar.querySelector('.cancel');
+
+      selectAllBtn?.addEventListener('click', this.boundHandlers.selectAll);
+      selectNoneBtn?.addEventListener('click', this.boundHandlers.selectNone);
+      deleteBtn?.addEventListener('click', this.boundHandlers.deleteSelected);
+      cancelBtn?.addEventListener('click', this.boundHandlers.cancelSelection);
+    }
+  }
+
+  /**
+   * Toggle selection mode on/off
+   */
+  toggleSelectionMode() {
+    this.isSelectionMode = !this.isSelectionMode;
+    
+    if (this.isSelectionMode) {
+      this.enterSelectionMode();
+    } else {
+      this.exitSelectionMode();
+    }
+  }
+
+  /**
+   * Enter selection mode
+   */
+  enterSelectionMode() {
+    console.log('📋 Entering selection mode');
+    
+    // Update UI
+    if (this.gridContainer) {
+      this.gridContainer.classList.add('xsaved-selection-mode');
+    }
+    
+    
+    if (this.selectionToolbar) {
+      this.selectionToolbar.classList.add('show');
+    }
+    
+    // Add selection checkboxes to existing bookmark cards
+    this.addSelectionCheckboxes();
+    
+    // Update selection count
+    this.updateSelectionCount();
+    
+    // Notify content.js about selection mode change
+    if (this.onSelectionModeChange) {
+      this.onSelectionModeChange(true);
+    }
+  }
+
+  /**
+   * Exit selection mode
+   */
+  exitSelectionMode() {
+    console.log('📋 Exiting selection mode');
+    
+    // Clear selections
+    this.selectedBookmarks.clear();
+    
+    // Update UI
+    if (this.gridContainer) {
+      this.gridContainer.classList.remove('xsaved-selection-mode');
+    }
+    
+    
+    if (this.selectionToolbar) {
+      this.selectionToolbar.classList.remove('show');
+    }
+    
+    // Remove selection checkboxes
+    this.removeSelectionCheckboxes();
+    
+    // Notify content.js about selection mode change
+    if (this.onSelectionModeChange) {
+      this.onSelectionModeChange(false);
+    }
+  }
+
+  /**
+   * Add selection checkboxes to bookmark cards
+   */
+  addSelectionCheckboxes() {
+    const bookmarkCards = this.gridContainer?.querySelectorAll('.tweet-card') || [];
+    
+    bookmarkCards.forEach(card => {
+      const bookmarkId = card.dataset.bookmarkId || card.dataset.tweetId;
+      if (!bookmarkId) return;
+      
+      // Store reference
+      this.bookmarkElements.set(bookmarkId, card);
+      
+      // Create checkbox if it doesn't exist
+      let checkbox = card.querySelector('.xsaved-selection-checkbox');
+      if (!checkbox) {
+        checkbox = document.createElement('div');
+        checkbox.className = 'xsaved-selection-checkbox';
+        checkbox.dataset.bookmarkId = bookmarkId;
+        card.appendChild(checkbox);
+        
+        // Add click handler
+        checkbox.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.toggleBookmarkSelection(bookmarkId);
+        });
+        
+        // Also allow clicking on the card itself
+        card.addEventListener('click', (e) => {
+          if (this.isSelectionMode && !e.target.closest('.xsaved-selection-checkbox')) {
+            this.toggleBookmarkSelection(bookmarkId);
+          }
+        });
+      }
+    });
+  }
+
+  /**
+   * Remove selection checkboxes from bookmark cards
+   */
+  removeSelectionCheckboxes() {
+    const checkboxes = document.querySelectorAll('.xsaved-selection-checkbox');
+    checkboxes.forEach(checkbox => checkbox.remove());
+    
+    // Clear stored references
+    this.bookmarkElements.clear();
+    
+    // Remove selected state from cards
+    const selectedCards = document.querySelectorAll('.tweet-card.selected');
+    selectedCards.forEach(card => card.classList.remove('selected'));
+  }
+
+  /**
+   * Toggle selection state of a bookmark
+   * @param {string} bookmarkId - The bookmark ID to toggle
+   */
+  toggleBookmarkSelection(bookmarkId) {
+    const card = this.bookmarkElements.get(bookmarkId);
+    const checkbox = card?.querySelector('.xsaved-selection-checkbox');
+    
+    if (!card || !checkbox) return;
+    
+    if (this.selectedBookmarks.has(bookmarkId)) {
+      // Deselect
+      this.selectedBookmarks.delete(bookmarkId);
+      card.classList.remove('selected');
+      checkbox.classList.remove('checked');
+    } else {
+      // Select
+      this.selectedBookmarks.add(bookmarkId);
+      card.classList.add('selected');
+      checkbox.classList.add('checked');
+    }
+    
+    this.updateSelectionCount();
+  }
+
+  /**
+   * Select all visible bookmarks
+   */
+  selectAll() {
+    const bookmarkCards = this.gridContainer?.querySelectorAll('.tweet-card') || [];
+    
+    bookmarkCards.forEach(card => {
+      const bookmarkId = card.dataset.bookmarkId || card.dataset.tweetId;
+      if (bookmarkId && !this.selectedBookmarks.has(bookmarkId)) {
+        this.selectedBookmarks.add(bookmarkId);
+        card.classList.add('selected');
+        
+        const checkbox = card.querySelector('.xsaved-selection-checkbox');
+        if (checkbox) {
+          checkbox.classList.add('checked');
+        }
+      }
+    });
+    
+    this.updateSelectionCount();
+    
+    showSuccess('Selected All', `Selected ${this.selectedBookmarks.size} bookmarks`);
+  }
+
+  /**
+   * Deselect all bookmarks
+   */
+  selectNone() {
+    this.selectedBookmarks.clear();
+    
+    const selectedCards = document.querySelectorAll('.tweet-card.selected');
+    selectedCards.forEach(card => {
+      card.classList.remove('selected');
+      const checkbox = card.querySelector('.xsaved-selection-checkbox');
+      if (checkbox) {
+        checkbox.classList.remove('checked');
+      }
+    });
+    
+    this.updateSelectionCount();
+  }
+
+  /**
+   * Update the selection count display
+   */
+  updateSelectionCount() {
+    const countElement = this.selectionToolbar?.querySelector('.xsaved-selection-count .count');
+    const deleteButton = this.selectionToolbar?.querySelector('.delete-selected');
+    
+    if (countElement) {
+      countElement.textContent = this.selectedBookmarks.size;
+    }
+    
+    if (deleteButton) {
+      deleteButton.disabled = this.selectedBookmarks.size === 0;
+    }
+  }
+
+  /**
+   * Delete selected bookmarks
+   */
+  async deleteSelected() {
+    const selectedIds = Array.from(this.selectedBookmarks);
+    
+    if (selectedIds.length === 0) {
+      showWarning('No Selection', 'Please select bookmarks to delete');
+      return;
+    }
+    
+    // Confirm deletion
+    const confirmed = confirm(
+      `Are you sure you want to delete ${selectedIds.length} selected bookmark${selectedIds.length > 1 ? 's' : ''}?\n\n` +
+      'This will remove them from both your local storage and X.com.'
+    );
+    
+    if (!confirmed) return;
+    
+    console.log(`🗑️ Deleting ${selectedIds.length} selected bookmarks`);
+    
+    // Show progress modal
+    this.showBulkProgress('Deleting Bookmarks', selectedIds.length);
+    
+    try {
+      // Send bulk delete request to service worker
+      const response = await chrome.runtime.sendMessage({
+        action: 'deleteBulkBookmarks',
+        tweetIds: selectedIds,
+        options: {
+          batchSize: 5,
+          delayBetweenBatches: 2000,
+          deleteFromApi: true
+        }
+      });
+      
+      this.hideBulkProgress();
+      
+      if (response.success) {
+        // Remove deleted cards from UI
+        selectedIds.forEach(id => {
+          const card = this.bookmarkElements.get(id);
+          if (card) {
+            card.remove();
+            this.bookmarkElements.delete(id);
+          }
+        });
+        
+        // Clear selection
+        this.selectedBookmarks.clear();
+        this.updateSelectionCount();
+        
+        // Show success notification
+        const { database, api } = response;
+        let message = `Deleted ${database.deleted} bookmarks from local storage`;
+        
+        if (api) {
+          if (api.success) {
+            message += ` and ${api.summary.successful} from X.com`;
+          } else {
+            message += `, but ${api.summary.failed} failed to delete from X.com`;
+          }
+        }
+        
+        showSuccess('Bookmarks Deleted', message);
+        
+        // Exit selection mode
+        this.exitSelectionMode();
+        
+      } else {
+        showError('Delete Failed', response.error || 'Failed to delete bookmarks');
+      }
+      
+    } catch (error) {
+      this.hideBulkProgress();
+      console.error('❌ Error deleting selected bookmarks:', error);
+      showError('Delete Error', error.message || 'An unexpected error occurred');
+    }
+  }
+
+  /**
+   * Cancel selection mode
+   */
+  cancelSelection() {
+    this.exitSelectionMode();
+  }
+
+  /**
+   * Show bulk operation progress modal
+   * @param {string} title - Progress title
+   * @param {number} total - Total items to process
+   */
+  showBulkProgress(title, total) {
+    this.hideBulkProgress(); // Remove any existing modal
+    
+    this.bulkProgressModal = document.createElement('div');
+    this.bulkProgressModal.className = 'xsaved-bulk-progress';
+    this.bulkProgressModal.innerHTML = `
+      <div class="xsaved-bulk-progress-title">${title}</div>
+      <div class="xsaved-bulk-progress-bar">
+        <div class="xsaved-bulk-progress-fill" style="width: 0%;"></div>
+      </div>
+      <div class="xsaved-bulk-progress-text">Starting...</div>
+    `;
+    
+    document.body.appendChild(this.bulkProgressModal);
+  }
+
+  /**
+   * Update bulk operation progress
+   * @param {number} current - Current progress
+   * @param {number} total - Total items
+   * @param {string} text - Progress text
+   */
+  updateBulkProgress(current, total, text = '') {
+    if (!this.bulkProgressModal) return;
+    
+    const percentage = Math.min(100, (current / total) * 100);
+    const progressFill = this.bulkProgressModal.querySelector('.xsaved-bulk-progress-fill');
+    const progressText = this.bulkProgressModal.querySelector('.xsaved-bulk-progress-text');
+    
+    if (progressFill) {
+      progressFill.style.width = `${percentage}%`;
+    }
+    
+    if (progressText) {
+      progressText.textContent = text || `${current} of ${total} completed`;
+    }
+  }
+
+  /**
+   * Hide bulk operation progress modal
+   */
+  hideBulkProgress() {
+    if (this.bulkProgressModal) {
+      this.bulkProgressModal.remove();
+      this.bulkProgressModal = null;
+    }
+  }
+
+  /**
+   * Handle progress updates from service worker
+   * @param {Object} progressData - Progress update data
+   */
+  handleProgressUpdate(progressData) {
+    if (progressData.action === 'bulkDeleteProgress') {
+      this.updateBulkProgress(
+        progressData.current,
+        progressData.total,
+        `Deleting from X.com: ${progressData.current}/${progressData.total} (${progressData.failed} failed)`
+      );
+    }
+  }
+
+  /**
+   * Cleanup and remove all UI elements
+   */
+  destroy() {
+    this.exitSelectionMode();
+    
+    if (this.selectionToolbar) {
+      this.selectionToolbar.remove();
+      this.selectionToolbar = null;
+    }
+    
+    this.hideBulkProgress();
+    
+    console.log('🧹 Selection Manager destroyed');
+  }
+}
+
+// Export singleton instance
+const selectionManager = new SelectionManager();
+
+console.log('📋 XSaved Selection Manager loaded');
+
+;// ./src/extension/content.js
 /**
  * XSaved Extension v2 - Content Script
  * Phase 3: Content Script & DOM Injection
@@ -78,6 +966,10 @@
 
 console.log('🚀 XSaved v2 Enhanced Content Script loaded:', window.location.href);
 
+// Import delete functionality
+
+
+
 // ===== CONFIGURATION =====
 const XSAVED_CONFIG = {
   selectors: {
@@ -152,6 +1044,10 @@ class XSavedContentScript {
       currentQuery: null,         // Store current search query for pagination
       totalLoaded: 0              // Track total bookmarks loaded
     };
+    
+    // Initialize delete functionality
+    this.selectionManager = selectionManager;
+    this.deleteEnabled = false;
   }
 
   async initialize() {
@@ -162,6 +1058,9 @@ class XSavedContentScript {
     try {
       // Initialize theme synchronization first
       this.initializeThemeSync();
+      
+      // Initialize notification system
+      initializeNotificationSystem();
       
       // Get current stats from service worker
       await this.updateStats();
@@ -299,6 +1198,11 @@ class XSavedContentScript {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.action === 'stateUpdate' && message.extractionState) {
         this.handleSyncStateUpdate(message.extractionState);
+      } else if (message.action === 'bulkDeleteProgress') {
+        // Forward progress updates to selection manager
+        if (this.deleteEnabled && this.selectionManager) {
+          this.selectionManager.handleProgressUpdate(message);
+        }
       }
     });
     
@@ -1135,6 +2039,15 @@ class XSavedContentScript {
 
     document.body.appendChild(gridOverlay);
 
+    // Initialize selection manager with the grid container
+    this.selectionManager.initialize(gridOverlay);
+    this.deleteEnabled = true;
+    
+    // Set up callback to update button state when selection mode changes
+    this.selectionManager.setSelectionModeChangeCallback((isActive) => {
+      this.updateSelectionButtonState(isActive);
+    });
+
     // Render the static layout (navbar, search, tags)
     this.renderLayout(gridOverlay);
 
@@ -1368,6 +2281,47 @@ class XSavedContentScript {
       this.showSortMenuWithFilters(sortButton, executeSearch);
     });
 
+    // Selection toggle button
+    const selectionToggle = document.createElement('button');
+    selectionToggle.id = 'xsaved-selection-toggle';
+    selectionToggle.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+        <path d="M200-200v80q-33 0-56.5-23.5T120-200h80Zm-80-80v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80h80v80h-80Zm80-160h-80q0-33 23.5-56.5T200-840v80Zm80 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 560h80q0 33-23.5 56.5T760-120v-80Zm0-80v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80q33 0 56.5 23.5T840-760h-80Z"/>
+      </svg>
+    `;
+    selectionToggle.title = 'Toggle selection mode';
+    selectionToggle.style.cssText = `
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 12px;
+      background: var(--xsaved-surface-color);
+      border: 1px solid var(--xsaved-border-color);
+      border-radius: 20px;
+      color: var(--xsaved-text-color);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-right: 8px;
+      font-size: 14px;
+      font-weight: 500;
+    `;
+
+    selectionToggle.addEventListener('mouseenter', () => {
+      if (!this.selectionManager.isSelectionMode) {
+        selectionToggle.style.background = 'var(--xsaved-hover-color)';
+      }
+    });
+    selectionToggle.addEventListener('mouseleave', () => {
+      if (!this.selectionManager.isSelectionMode) {
+        selectionToggle.style.background = 'var(--xsaved-surface-color)';
+      }
+    });
+
+    selectionToggle.addEventListener('click', () => {
+      console.log('📋 Selection toggle clicked');
+      this.toggleSelectionMode(selectionToggle);
+    });
+
     // TODO: TEMPORARILY DISABLED - Export/Download button
     // This feature will be re-implemented in a future version with enhanced export options
     // The export system needs to be redesigned to support more formats, better filtering,
@@ -1410,6 +2364,7 @@ class XSavedContentScript {
 
     rightSide.appendChild(searchContainer);
     rightSide.appendChild(sortButton);
+    rightSide.appendChild(selectionToggle);
     // rightSide.appendChild(downloadButton); // Temporarily disabled
 
     header.appendChild(tagSelector);
@@ -1972,6 +2927,13 @@ class XSavedContentScript {
 
   hideGridInterface() {
     console.log('🔍 Hiding XSaved grid interface...');
+    
+    // Clean up selection manager
+    if (this.deleteEnabled) {
+      this.selectionManager.destroy();
+      this.deleteEnabled = false;
+    }
+    
     const gridOverlay = document.getElementById('xsaved-grid-overlay');
     if (gridOverlay) {
       gridOverlay.remove();
@@ -1995,6 +2957,53 @@ class XSavedContentScript {
     if (searchContainer) {
       searchContainer.style.display = '';
       searchContainer.removeAttribute('data-xsaved-hidden');
+    }
+  }
+
+  /**
+   * Toggle selection mode on/off
+   * @param {HTMLElement} toggleButton - The selection toggle button element
+   */
+  toggleSelectionMode(toggleButton) {
+    if (!this.deleteEnabled) {
+      console.warn('⚠️ Selection mode not available - delete functionality not enabled');
+      return;
+    }
+
+    // Toggle the selection mode
+    this.selectionManager.toggleSelectionMode();
+    
+    // The button state will be updated via the callback
+  }
+
+  /**
+   * Update the selection button state
+   * @param {boolean} isActive - Whether selection mode is active
+   */
+  updateSelectionButtonState(isActive) {
+    const toggleButton = document.getElementById('xsaved-selection-toggle');
+    if (!toggleButton) return;
+
+    if (isActive) {
+      // Active state - blue background
+      toggleButton.style.background = 'var(--xsaved-accent-color, #1DA1F2)';
+      toggleButton.style.borderColor = 'var(--xsaved-accent-color, #1DA1F2)';
+      toggleButton.style.color = 'white';
+      toggleButton.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+          <path d="M200-200v80q-33 0-56.5-23.5T120-200h80Zm-80-80v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80h80v80h-80Zm80-160h-80q0-33 23.5-56.5T200-840v80Zm80 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 560h80q0 33-23.5 56.5T760-120v-80Zm0-80v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80q33 0 56.5 23.5T840-760h-80Z"/>
+        </svg>
+      `;
+    } else {
+      // Inactive state - normal appearance
+      toggleButton.style.background = 'var(--xsaved-surface-color)';
+      toggleButton.style.borderColor = 'var(--xsaved-border-color)';
+      toggleButton.style.color = 'var(--xsaved-text-color)';
+      toggleButton.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+          <path d="M200-200v80q-33 0-56.5-23.5T120-200h80Zm-80-80v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80h80v80h-80Zm80-160h-80q0-33 23.5-56.5T200-840v80Zm80 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 560h80q0 33-23.5 56.5T760-120v-80Zm0-80v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80q33 0 56.5 23.5T840-760h-80Z"/>
+        </svg>
+      `;
     }
   }
 
@@ -2599,6 +3608,7 @@ class XSavedContentScript {
 
     const card = document.createElement('div');
     card.setAttribute('data-bookmark-id', safeBookmark.id);
+    card.setAttribute('data-tweet-id', safeBookmark.id); // For compatibility with selection manager
     
     // Apply base card styles without floating animations
     card.className = 'tweet-card';

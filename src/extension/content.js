@@ -77,6 +77,10 @@
 
 console.log('🚀 XSaved v2 Enhanced Content Script loaded:', window.location.href);
 
+// Import delete functionality
+import { selectionManager } from '../utils/selection-manager.js';
+import { showSuccess, showError, showWarning, initializeNotificationSystem } from '../utils/notification-system.js';
+
 // ===== CONFIGURATION =====
 const XSAVED_CONFIG = {
   selectors: {
@@ -151,6 +155,10 @@ class XSavedContentScript {
       currentQuery: null,         // Store current search query for pagination
       totalLoaded: 0              // Track total bookmarks loaded
     };
+    
+    // Initialize delete functionality
+    this.selectionManager = selectionManager;
+    this.deleteEnabled = false;
   }
 
   async initialize() {
@@ -161,6 +169,9 @@ class XSavedContentScript {
     try {
       // Initialize theme synchronization first
       this.initializeThemeSync();
+      
+      // Initialize notification system
+      initializeNotificationSystem();
       
       // Get current stats from service worker
       await this.updateStats();
@@ -298,6 +309,11 @@ class XSavedContentScript {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.action === 'stateUpdate' && message.extractionState) {
         this.handleSyncStateUpdate(message.extractionState);
+      } else if (message.action === 'bulkDeleteProgress') {
+        // Forward progress updates to selection manager
+        if (this.deleteEnabled && this.selectionManager) {
+          this.selectionManager.handleProgressUpdate(message);
+        }
       }
     });
     
@@ -1134,6 +1150,15 @@ class XSavedContentScript {
 
     document.body.appendChild(gridOverlay);
 
+    // Initialize selection manager with the grid container
+    this.selectionManager.initialize(gridOverlay);
+    this.deleteEnabled = true;
+    
+    // Set up callback to update button state when selection mode changes
+    this.selectionManager.setSelectionModeChangeCallback((isActive) => {
+      this.updateSelectionButtonState(isActive);
+    });
+
     // Render the static layout (navbar, search, tags)
     this.renderLayout(gridOverlay);
 
@@ -1367,6 +1392,47 @@ class XSavedContentScript {
       this.showSortMenuWithFilters(sortButton, executeSearch);
     });
 
+    // Selection toggle button
+    const selectionToggle = document.createElement('button');
+    selectionToggle.id = 'xsaved-selection-toggle';
+    selectionToggle.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+        <path d="M200-200v80q-33 0-56.5-23.5T120-200h80Zm-80-80v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80h80v80h-80Zm80-160h-80q0-33 23.5-56.5T200-840v80Zm80 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 560h80q0 33-23.5 56.5T760-120v-80Zm0-80v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80q33 0 56.5 23.5T840-760h-80Z"/>
+      </svg>
+    `;
+    selectionToggle.title = 'Toggle selection mode';
+    selectionToggle.style.cssText = `
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 12px;
+      background: var(--xsaved-surface-color);
+      border: 1px solid var(--xsaved-border-color);
+      border-radius: 20px;
+      color: var(--xsaved-text-color);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-right: 8px;
+      font-size: 14px;
+      font-weight: 500;
+    `;
+
+    selectionToggle.addEventListener('mouseenter', () => {
+      if (!this.selectionManager.isSelectionMode) {
+        selectionToggle.style.background = 'var(--xsaved-hover-color)';
+      }
+    });
+    selectionToggle.addEventListener('mouseleave', () => {
+      if (!this.selectionManager.isSelectionMode) {
+        selectionToggle.style.background = 'var(--xsaved-surface-color)';
+      }
+    });
+
+    selectionToggle.addEventListener('click', () => {
+      console.log('📋 Selection toggle clicked');
+      this.toggleSelectionMode(selectionToggle);
+    });
+
     // TODO: TEMPORARILY DISABLED - Export/Download button
     // This feature will be re-implemented in a future version with enhanced export options
     // The export system needs to be redesigned to support more formats, better filtering,
@@ -1409,6 +1475,7 @@ class XSavedContentScript {
 
     rightSide.appendChild(searchContainer);
     rightSide.appendChild(sortButton);
+    rightSide.appendChild(selectionToggle);
     // rightSide.appendChild(downloadButton); // Temporarily disabled
 
     header.appendChild(tagSelector);
@@ -1971,6 +2038,13 @@ class XSavedContentScript {
 
   hideGridInterface() {
     console.log('🔍 Hiding XSaved grid interface...');
+    
+    // Clean up selection manager
+    if (this.deleteEnabled) {
+      this.selectionManager.destroy();
+      this.deleteEnabled = false;
+    }
+    
     const gridOverlay = document.getElementById('xsaved-grid-overlay');
     if (gridOverlay) {
       gridOverlay.remove();
@@ -1994,6 +2068,53 @@ class XSavedContentScript {
     if (searchContainer) {
       searchContainer.style.display = '';
       searchContainer.removeAttribute('data-xsaved-hidden');
+    }
+  }
+
+  /**
+   * Toggle selection mode on/off
+   * @param {HTMLElement} toggleButton - The selection toggle button element
+   */
+  toggleSelectionMode(toggleButton) {
+    if (!this.deleteEnabled) {
+      console.warn('⚠️ Selection mode not available - delete functionality not enabled');
+      return;
+    }
+
+    // Toggle the selection mode
+    this.selectionManager.toggleSelectionMode();
+    
+    // The button state will be updated via the callback
+  }
+
+  /**
+   * Update the selection button state
+   * @param {boolean} isActive - Whether selection mode is active
+   */
+  updateSelectionButtonState(isActive) {
+    const toggleButton = document.getElementById('xsaved-selection-toggle');
+    if (!toggleButton) return;
+
+    if (isActive) {
+      // Active state - blue background
+      toggleButton.style.background = 'var(--xsaved-accent-color, #1DA1F2)';
+      toggleButton.style.borderColor = 'var(--xsaved-accent-color, #1DA1F2)';
+      toggleButton.style.color = 'white';
+      toggleButton.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+          <path d="M200-200v80q-33 0-56.5-23.5T120-200h80Zm-80-80v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80h80v80h-80Zm80-160h-80q0-33 23.5-56.5T200-840v80Zm80 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 560h80q0 33-23.5 56.5T760-120v-80Zm0-80v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80q33 0 56.5 23.5T840-760h-80Z"/>
+        </svg>
+      `;
+    } else {
+      // Inactive state - normal appearance
+      toggleButton.style.background = 'var(--xsaved-surface-color)';
+      toggleButton.style.borderColor = 'var(--xsaved-border-color)';
+      toggleButton.style.color = 'var(--xsaved-text-color)';
+      toggleButton.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+          <path d="M200-200v80q-33 0-56.5-23.5T120-200h80Zm-80-80v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80h80v80h-80Zm80-160h-80q0-33 23.5-56.5T200-840v80Zm80 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 640v-80h80v80h-80Zm0-640v-80h80v80h-80Zm160 560h80q0 33-23.5 56.5T760-120v-80Zm0-80v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80h80v80h-80Zm0-160v-80q33 0 56.5 23.5T840-760h-80Z"/>
+        </svg>
+      `;
     }
   }
 
@@ -2598,6 +2719,7 @@ class XSavedContentScript {
 
     const card = document.createElement('div');
     card.setAttribute('data-bookmark-id', safeBookmark.id);
+    card.setAttribute('data-tweet-id', safeBookmark.id); // For compatibility with selection manager
     
     // Apply base card styles without floating animations
     card.className = 'tweet-card';

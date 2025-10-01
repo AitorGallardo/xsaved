@@ -76,6 +76,14 @@ module.exports = {
           from: 'src/utils/theme-integration.js', 
           to: 'src/utils/theme-integration.js'
         },
+        { 
+          from: 'src/utils/notification-system.js', 
+          to: 'src/utils/notification-system.js'
+        },
+        { 
+          from: 'src/utils/selection-manager.js', 
+          to: 'src/utils/selection-manager.js'
+        },
         {
           from: 'src/extension/utils',
           to: 'src/extension/utils',

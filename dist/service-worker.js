@@ -308,10 +308,12 @@ class XSavedDatabase extends import_wrapper_prod {
         this.bookmarks.hook('updating', (modifications, primKey, obj, trans) => {
             console.log(`🔄 Updating bookmark: ${primKey}`, modifications);
             // Auto-regenerate textTokens if any searchable field was modified
-            if (modifications.text !== undefined || modifications.author !== undefined || modifications.tags !== undefined) {
+            const mods = modifications;
+            if (mods.text !== undefined || mods.author !== undefined || mods.tags !== undefined) {
                 // Merge current object with modifications to get full context
-                const updatedObj = { ...obj, ...modifications };
-                modifications.textTokens = this.tokenizeBookmark(updatedObj);
+                const currentObj = obj;
+                const updatedObj = { ...currentObj, ...mods };
+                mods.textTokens = this.tokenizeBookmark(updatedObj);
                 console.log(`🔄 Regenerated textTokens for bookmark: ${primKey}`);
             }
         });
@@ -510,6 +512,121 @@ class XSavedDatabase extends import_wrapper_prod {
             return {
                 success: false,
                 error: error instanceof Error ? error.message : 'Failed to delete bookmark'
+            };
+        }
+    }
+    /**
+     * Delete multiple bookmarks by IDs with cleanup
+     * @param {string[]} ids - Array of bookmark IDs to delete
+     * @returns {Promise<DatabaseResult<{deleted: number, failed: string[]}>>}
+     */
+    async deleteBulkBookmarks(ids) {
+        try {
+            const { result, metrics } = await this.withPerformanceTracking('deleteBulkBookmarks', async () => {
+                const failed = [];
+                let deleted = 0;
+                // Use Dexie transaction for atomicity
+                await this.transaction('rw', this.bookmarks, this.searchIndex, async () => {
+                    for (const id of ids) {
+                        try {
+                            // Delete from bookmarks table
+                            await this.bookmarks.delete(id);
+                            // Clean up search index
+                            await this.searchIndex.delete(id);
+                            deleted++;
+                            console.log(`✅ Bulk deleted bookmark: ${id}`);
+                        }
+                        catch (error) {
+                            console.warn(`⚠️ Failed to delete bookmark ${id}:`, error);
+                            failed.push(id);
+                        }
+                    }
+                });
+                return { deleted, failed };
+            });
+            console.log(`✅ Bulk delete completed: ${result.deleted} deleted, ${result.failed.length} failed`);
+            return {
+                success: true,
+                data: result,
+                metrics
+            };
+        }
+        catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Failed to delete bookmarks in bulk'
+            };
+        }
+    }
+    /**
+     * Delete bookmarks with tag cleanup
+     * Removes bookmarks and updates tag usage counts
+     * @param {string[]} ids - Array of bookmark IDs to delete
+     * @returns {Promise<DatabaseResult<{deleted: number, failed: string[], tagsUpdated: number}>>}
+     */
+    async deleteBookmarksWithTagCleanup(ids) {
+        try {
+            const { result, metrics } = await this.withPerformanceTracking('deleteBookmarksWithTagCleanup', async () => {
+                const failed = [];
+                let deleted = 0;
+                const tagUsageChanges = new Map();
+                // First, collect tag usage data from bookmarks to be deleted
+                const bookmarksToDelete = await this.bookmarks.where('id').anyOf(ids).toArray();
+                for (const bookmark of bookmarksToDelete) {
+                    if (bookmark.tags && Array.isArray(bookmark.tags)) {
+                        for (const tag of bookmark.tags) {
+                            tagUsageChanges.set(tag, (tagUsageChanges.get(tag) || 0) + 1);
+                        }
+                    }
+                }
+                // Use transaction for atomicity
+                await this.transaction('rw', this.bookmarks, this.searchIndex, this.tags, async () => {
+                    // Delete bookmarks and search index entries
+                    for (const id of ids) {
+                        try {
+                            await this.bookmarks.delete(id);
+                            await this.searchIndex.delete(id);
+                            deleted++;
+                        }
+                        catch (error) {
+                            console.warn(`⚠️ Failed to delete bookmark ${id}:`, error);
+                            failed.push(id);
+                        }
+                    }
+                    // Update tag usage counts
+                    for (const [tagName, decreaseCount] of tagUsageChanges) {
+                        try {
+                            const tag = await this.tags.get(tagName);
+                            if (tag) {
+                                const newUsageCount = Math.max(0, tag.usageCount - decreaseCount);
+                                if (newUsageCount === 0) {
+                                    // Remove tag if no longer used
+                                    await this.tags.delete(tagName);
+                                }
+                                else {
+                                    // Update usage count
+                                    await this.tags.update(tagName, { usageCount: newUsageCount });
+                                }
+                            }
+                        }
+                        catch (error) {
+                            console.warn(`⚠️ Failed to update tag usage for ${tagName}:`, error);
+                        }
+                    }
+                });
+                return { deleted, failed, tagsUpdated: tagUsageChanges.size };
+            });
+            console.log(`✅ Delete with tag cleanup completed: ${result.deleted} deleted, ${result.tagsUpdated} tags updated`);
+            return {
+                success: true,
+                data: result,
+                metrics
+            };
+        }
+        catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Failed to delete bookmarks with tag cleanup'
             };
         }
     }
@@ -2959,7 +3076,7 @@ const searchEngine = new SearchEngine();
  * @param {Number} ms - Milliseconds to delay
  * @returns {Promise} Promise that resolves after the delay
  */
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const helpers_delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
  * Create a retry function with exponential backoff
@@ -3006,7 +3123,7 @@ const withRetry = (fn, options = {}) => {
           : exponentialDelay;
         
         // Wait before retrying
-        await delay(finalDelay);
+        await helpers_delay(finalDelay);
       }
     }
     
@@ -3301,6 +3418,7 @@ console.log('🛠️ XSaved v2 Helpers utility loaded - ready for error handling
 // Constants
 const TWITTER_URL = 'https://x.com';
 const BOOKMARK_ENDPOINT = `${TWITTER_URL}/i/api/graphql/QUjXply7fA7fk05FRyajEg/Bookmarks`;
+const DELETE_BOOKMARK_ENDPOINT = `${TWITTER_URL}/i/api/graphql/Wlmlj2-xzyS1GN3a6cj-mQ/DeleteBookmark`;
 
 /**
  * Main function to fetch bookmarks from X.com API
@@ -3596,7 +3714,221 @@ const checkNextCursor = (currentCursor, nextCursor) => {
   return nextCursor === currentCursor ? null : nextCursor;
 };
 
-console.log('📡 XSaved v2 Fetcher utility loaded - ready for X.com API integration'); 
+/**
+ * Delete a single bookmark from X.com API
+ * @param {string} tweetId - Tweet ID to remove from bookmarks
+ * @param {string|null} csrfTokenOverride - Optional CSRF token override
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+const deleteBookmarkV2 = async (tweetId, csrfTokenOverride = null) => {
+  console.log(`🗑️ Deleting bookmark: ${tweetId}`);
+  
+  // Get CSRF token
+  let csrfToken = csrfTokenOverride;
+  if (!csrfToken) {
+    try {
+      csrfToken = await getCsrfToken();
+      if (!csrfToken) {
+        console.warn('⚠️ CSRF token not found for delete operation');
+        return { success: false, error: 'Authentication required' };
+      }
+    } catch (error) {
+      console.error('❌ Error getting CSRF token for delete:', error.message);
+      return { success: false, error: 'Authentication failed' };
+    }
+  }
+
+  // Construct headers required by X.com API (same as fetch)
+  const headers = {
+    "accept": "*/*",
+    "accept-language": "en-US,en;q=0.9",
+    "authorization": "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA",
+    "content-type": "application/json",
+    "x-twitter-active-user": "yes",
+    "x-twitter-auth-type": "OAuth2Session",
+    "x-twitter-client-language": "en",
+    "x-csrf-token": csrfToken,
+    "x-client-transaction-id": `${Date.now()}-${Math.random().toString(36).substring(2)}`,
+    "x-client-uuid": generateClientUUID()
+  };
+
+  // Request body for delete operation
+  const requestBody = {
+    variables: {
+      tweet_id: tweetId
+    },
+    queryId: "Wlmlj2-xzyS1GN3a6cj-mQ"
+  };
+
+  try {
+    console.log(`🌐 Making delete request to X.com API for tweet: ${tweetId}`);
+    
+    const response = await fetch(DELETE_BOOKMARK_ENDPOINT, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(requestBody),
+      referrer: `${TWITTER_URL}/i/bookmarks`,
+      referrerPolicy: "strict-origin-when-cross-origin",
+      mode: "cors",
+      credentials: "include",
+    });
+    
+    if (!response.ok) {
+      if (response.status === 429) {
+        throw new RateLimitError(`Rate limit reached during delete: ${response.status}`);
+      }
+      if (response.status === 404) {
+        // Bookmark might already be deleted - this is not necessarily an error
+        console.log(`⚠️ Bookmark ${tweetId} not found (may already be deleted)`);
+        return { success: true, alreadyDeleted: true };
+      }
+      throw new NetworkError(`HTTP error during delete! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    // Check if the response indicates success
+    if (data?.data?.bookmark_delete === "Done") {
+      console.log(`✅ Successfully deleted bookmark: ${tweetId}`);
+      return { success: true };
+    } else {
+      console.warn(`⚠️ Unexpected delete response for ${tweetId}:`, data);
+      return { success: false, error: 'Unexpected API response' };
+    }
+    
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      console.warn(`⚠️ Rate limit hit during delete of ${tweetId}`);
+      throw error;
+    }
+    
+    if (error instanceof NetworkError) {
+      console.error(`❌ Network error deleting ${tweetId}:`, error.message);
+      throw error;
+    }
+    
+    console.error(`❌ Unexpected error deleting bookmark ${tweetId}:`, error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Delete multiple bookmarks in batches with rate limiting
+ * @param {string[]} tweetIds - Array of tweet IDs to delete
+ * @param {Object} options - Configuration options
+ * @param {number} options.batchSize - Number of deletes per batch (default: 5)
+ * @param {number} options.delayBetweenBatches - Delay between batches in ms (default: 2000)
+ * @param {Function} options.onProgress - Progress callback (current, total, failed)
+ * @param {string|null} csrfTokenOverride - Optional CSRF token override
+ * @returns {Promise<{success: boolean, results: Array, summary: Object}>}
+ */
+const deleteBulkBookmarksV2 = async (tweetIds, options = {}, csrfTokenOverride = null) => {
+  const {
+    batchSize = 5,
+    delayBetweenBatches = 2000,
+    onProgress = () => {}
+  } = options;
+
+  console.log(`🗑️ Starting bulk delete of ${tweetIds.length} bookmarks (batch size: ${batchSize})`);
+  
+  const results = [];
+  const summary = {
+    total: tweetIds.length,
+    successful: 0,
+    failed: 0,
+    alreadyDeleted: 0,
+    errors: []
+  };
+
+  // Process in batches to avoid rate limits
+  for (let i = 0; i < tweetIds.length; i += batchSize) {
+    const batch = tweetIds.slice(i, i + batchSize);
+    console.log(`🔄 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(tweetIds.length / batchSize)}`);
+    
+    // Process batch items in parallel (but limited by batch size)
+    const batchPromises = batch.map(async (tweetId) => {
+      try {
+        const result = await deleteBookmarkV2(tweetId, csrfTokenOverride);
+        
+        if (result.success) {
+          if (result.alreadyDeleted) {
+            summary.alreadyDeleted++;
+          } else {
+            summary.successful++;
+          }
+        } else {
+          summary.failed++;
+          summary.errors.push({ tweetId, error: result.error });
+        }
+        
+        return { tweetId, ...result };
+        
+      } catch (error) {
+        summary.failed++;
+        const errorMsg = error.message || 'Unknown error';
+        summary.errors.push({ tweetId, error: errorMsg });
+        
+        return { 
+          tweetId, 
+          success: false, 
+          error: errorMsg,
+          isRateLimit: error instanceof RateLimitError
+        };
+      }
+    });
+    
+    const batchResults = await Promise.all(batchPromises);
+    results.push(...batchResults);
+    
+    // Update progress
+    const completed = Math.min(i + batchSize, tweetIds.length);
+    onProgress(completed, tweetIds.length, summary.failed);
+    
+    // Check for rate limits in this batch
+    const rateLimitErrors = batchResults.filter(r => r.isRateLimit);
+    if (rateLimitErrors.length > 0) {
+      console.warn(`⚠️ Rate limit detected, extending delay for next batch`);
+      await delay(delayBetweenBatches * 2); // Double the delay
+    } else if (i + batchSize < tweetIds.length) {
+      // Normal delay between batches
+      await delay(delayBetweenBatches);
+    }
+  }
+
+  console.log(`✅ Bulk delete completed: ${summary.successful} successful, ${summary.failed} failed, ${summary.alreadyDeleted} already deleted`);
+  
+  return {
+    success: summary.failed === 0,
+    results,
+    summary
+  };
+};
+
+/**
+ * Check if a bookmark exists on X.com (useful before attempting delete)
+ * @param {string} tweetId - Tweet ID to check
+ * @returns {Promise<{exists: boolean, error?: string}>}
+ */
+const checkBookmarkExists = async (tweetId) => {
+  try {
+    // We can use a lightweight API call to check if bookmark exists
+    // This is a simplified check - in practice, you might want to implement
+    // a more specific endpoint if available
+    console.log(`🔍 Checking if bookmark exists: ${tweetId}`);
+    
+    // For now, we'll assume it exists unless we get a 404 during delete
+    // A more sophisticated implementation could use the bookmarks fetch
+    // with a specific cursor or search
+    
+    return { exists: true };
+    
+  } catch (error) {
+    console.warn(`⚠️ Error checking bookmark existence for ${tweetId}:`, error);
+    return { exists: false, error: error.message };
+  }
+};
+
+console.log('📡 XSaved v2 Fetcher utility loaded - ready for X.com API integration (with delete support)'); 
 ;// ./src/utils/sortIndex-utils.ts
 /**
  * XSaved Extension v2 - SortIndex Utilities
@@ -4432,7 +4764,7 @@ const extractAllBookmarks = async () => {
                     }
                     // Check if this bookmark already exists with manual tags
                     const existingBookmark = await serviceWorker.db?.getBookmark(bookmark.id);
-                    if (existingBookmark?.success) {
+                    if (existingBookmark?.success && existingBookmark.data?.tags?.length > 0) {
                         // Preserve existing tags instead of overwriting with Twitter data
                         bookmark.tags = existingBookmark.data.tags;
                     }
@@ -4454,7 +4786,7 @@ const extractAllBookmarks = async () => {
                 }
                 // Delay between requests
                 if (hasMore) {
-                    await delay(RATE_LIMIT_DELAY);
+                    await helpers_delay(RATE_LIMIT_DELAY);
                 }
             }
             catch (error) {
@@ -4468,7 +4800,7 @@ const extractAllBookmarks = async () => {
                     console.error('❌ Max retries reached, stopping extraction');
                     break;
                 }
-                await delay(RATE_LIMIT_DELAY * retryCount);
+                await helpers_delay(RATE_LIMIT_DELAY * retryCount);
             }
         }
         // Update sync state (keep existing logic)
@@ -4555,6 +4887,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             handleFirstTimeSetup();
             sendResponse({ success: true });
             break;
+        case "deleteBookmark":
+            handleDeleteBookmark(request.tweetId, sendResponse);
+            return true;
+        case "deleteBulkBookmarks":
+            handleDeleteBulkBookmarks(request.tweetIds, request.options, sendResponse);
+            return true;
     }
 });
 const handleStartExtraction = async (sendResponse, options = {}) => {
@@ -4810,7 +5148,7 @@ const handleFirstTimeSetup = async () => {
     console.log('🚀 Starting first-time setup process...');
     try {
         // Wait a bit for extension to fully initialize
-        await delay(2000);
+        await helpers_delay(2000);
         // Check if user is logged into X.com
         const isLoggedIn = await serviceWorker.checkXLoginStatus();
         if (!isLoggedIn) {
@@ -4966,6 +5304,157 @@ const service_worker_broadcastStateUpdate = () => {
     });
     // Notify popup
     notifyPopup(stateMessage);
+};
+/**
+ * Handle single bookmark deletion
+ */
+const handleDeleteBookmark = async (tweetId, sendResponse) => {
+    try {
+        await serviceWorker.initialize();
+        console.log(`🗑️ Service Worker: Deleting bookmark ${tweetId}`);
+        // Step 1: Delete from local database first (optimistic update)
+        const dbResult = await serviceWorker.db.deleteBookmark(tweetId);
+        if (!dbResult.success) {
+            console.error(`❌ Failed to delete bookmark from database: ${dbResult.error}`);
+            sendResponse({
+                success: false,
+                error: `Database error: ${dbResult.error}`
+            });
+            return;
+        }
+        // Step 2: Delete from X.com API
+        try {
+            const apiResult = await deleteBookmarkV2(tweetId);
+            if (apiResult.success) {
+                console.log(`✅ Successfully deleted bookmark ${tweetId} from both DB and X.com`);
+                sendResponse({
+                    success: true,
+                    deletedFromApi: !apiResult.alreadyDeleted,
+                    alreadyDeletedFromApi: apiResult.alreadyDeleted
+                });
+            }
+            else {
+                console.warn(`⚠️ Failed to delete from X.com API, but removed from local DB: ${apiResult.error}`);
+                sendResponse({
+                    success: true,
+                    deletedFromApi: false,
+                    apiError: apiResult.error,
+                    message: 'Removed from local storage, but X.com deletion failed'
+                });
+            }
+        }
+        catch (error) {
+            if (error instanceof RateLimitError) {
+                console.warn(`⚠️ Rate limit hit while deleting ${tweetId}, but removed from local DB`);
+                sendResponse({
+                    success: true,
+                    deletedFromApi: false,
+                    rateLimited: true,
+                    message: 'Removed from local storage, X.com deletion rate limited'
+                });
+            }
+            else {
+                console.error(`❌ API error deleting ${tweetId}:`, error);
+                sendResponse({
+                    success: true,
+                    deletedFromApi: false,
+                    apiError: error.message,
+                    message: 'Removed from local storage, but X.com deletion failed'
+                });
+            }
+        }
+    }
+    catch (error) {
+        console.error(`❌ Error in handleDeleteBookmark:`, error);
+        sendResponse({
+            success: false,
+            error: error.message
+        });
+    }
+};
+/**
+ * Handle bulk bookmark deletion with progress tracking
+ */
+const handleDeleteBulkBookmarks = async (tweetIds, options = {}, sendResponse) => {
+    try {
+        await serviceWorker.initialize();
+        console.log(`🗑️ Service Worker: Bulk deleting ${tweetIds.length} bookmarks`);
+        const { batchSize = 5, delayBetweenBatches = 2000, deleteFromApi = true } = options;
+        // Step 1: Delete from local database first (optimistic update)
+        console.log(`📀 Deleting ${tweetIds.length} bookmarks from local database...`);
+        const dbResult = await serviceWorker.db.deleteBookmarksWithTagCleanup(tweetIds);
+        if (!dbResult.success) {
+            console.error(`❌ Failed to delete bookmarks from database: ${dbResult.error}`);
+            sendResponse({
+                success: false,
+                error: `Database error: ${dbResult.error}`
+            });
+            return;
+        }
+        console.log(`✅ Deleted ${dbResult.data.deleted} bookmarks from local database`);
+        // Step 2: Delete from X.com API if requested
+        let apiResults = null;
+        if (deleteFromApi) {
+            try {
+                console.log(`🌐 Deleting ${tweetIds.length} bookmarks from X.com API...`);
+                // Progress callback for API deletions
+                const onProgress = (current, total, failed) => {
+                    // Notify content scripts and popup about progress
+                    const progressMessage = {
+                        action: "bulkDeleteProgress",
+                        current,
+                        total,
+                        failed,
+                        phase: "api"
+                    };
+                    // Broadcast progress update
+                    chrome.tabs.query({ url: "https://x.com/*" }, (tabs) => {
+                        tabs.forEach(tab => {
+                            notifyContentScript(tab.id, progressMessage).catch(() => { });
+                        });
+                    });
+                    notifyPopup(progressMessage);
+                };
+                apiResults = await deleteBulkBookmarksV2(tweetIds, {
+                    batchSize,
+                    delayBetweenBatches,
+                    onProgress
+                });
+                console.log(`✅ API bulk delete completed: ${apiResults.summary.successful} successful, ${apiResults.summary.failed} failed`);
+            }
+            catch (error) {
+                console.error(`❌ API bulk delete error:`, error);
+                apiResults = {
+                    success: false,
+                    error: error.message,
+                    summary: { successful: 0, failed: tweetIds.length, errors: [] }
+                };
+            }
+        }
+        // Prepare response
+        const response = {
+            success: true,
+            database: {
+                deleted: dbResult.data.deleted,
+                failed: dbResult.data.failed,
+                tagsUpdated: dbResult.data.tagsUpdated
+            },
+            api: apiResults ? {
+                success: apiResults.success,
+                summary: apiResults.summary,
+                error: apiResults.error
+            } : null,
+            message: `Successfully processed ${dbResult.data.deleted} bookmarks`
+        };
+        sendResponse(response);
+    }
+    catch (error) {
+        console.error(`❌ Error in handleDeleteBulkBookmarks:`, error);
+        sendResponse({
+            success: false,
+            error: error.message
+        });
+    }
 };
 // ===============================
 // INITIALIZATION
