@@ -1223,7 +1223,6 @@ class XSavedContentScript {
     // The tag filtering system needs to be redesigned to work better with the search functionality
     // and provide a more intuitive user experience for organizing bookmarks by categories.
     
-    /* 
     // Left side: Tag filters
     const tagSelector = document.createElement('div');
     tagSelector.style.cssText = `
@@ -1303,17 +1302,7 @@ class XSavedContentScript {
 
       tagSelector.appendChild(tagButton);
     });
-    */
     
-    // Create placeholder for future tag filters
-    const tagSelector = document.createElement('div');
-    tagSelector.style.cssText = `
-      display: flex;
-      gap: 12px;
-      flex: 1;
-      padding-right: 20px;
-    `;
-
     // Right side: Search and Export
     const rightSide = document.createElement('div');
     rightSide.style.cssText = `
@@ -1766,6 +1755,35 @@ class XSavedContentScript {
         console.error('❌ Author search error:', error);
       }
     };
+
+    // PROVISIONAL FUNCTION: Same as showAuthorDropdown but offsets the first result
+    const showAuthorDropdownProvisional = async (query = '') => {
+      try {
+        const response = await chrome.runtime.sendMessage({
+          action: 'searchAuthors',
+          query: query,
+          limit: 10
+        });
+        
+        if (response && response.success) {
+          // Offset the first result by moving it to the end
+          let authors = response.authors;
+          if (authors.length > 1) {
+            const firstAuthor = authors.shift(); // Remove first author
+            authors.push(firstAuthor); // Add it to the end
+          }
+          
+          currentAuthors = authors;
+          renderAuthorDropdown(currentAuthors);
+          authorDropdown.style.display = 'block';
+          selectedAuthorIndex = -1;
+        } else {
+          console.error('❌ Author search failed:', response?.error);
+        }
+      } catch (error) {
+        console.error('❌ Author search error:', error);
+      }
+    };
     
     const hideAuthorDropdown = () => {
       authorDropdown.style.display = 'none';
@@ -1909,7 +1927,9 @@ class XSavedContentScript {
         
         // Debounce author search
         authorSearchTimeout = setTimeout(() => {
-          showAuthorDropdown(afterAt);
+          // Provisional in order to do demo.
+          // showAuthorDropdown(afterAt);
+          showAuthorDropdownProvisional(afterAt);
         }, 200);
         
         return; // Don't trigger regular search while showing author dropdown
