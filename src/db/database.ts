@@ -32,8 +32,12 @@ export class XSavedDatabase extends Dexie {
   
   private isInitialized = false;
 
-  constructor() {
-    super('XSavedDB');
+  constructor(dbName?: string) {
+    // Use provided name or default to 'XSavedDB'
+    const databaseName = dbName || 'XSavedDB';
+    super(databaseName);
+    
+    console.log(`🗄️ Initializing database: ${databaseName}`);
     
     // Define schema with indexes
     this.version(1).stores({
@@ -1234,8 +1238,13 @@ export class XSavedDatabase extends Dexie {
   }
 }
 
-// Create and export database instance
+// Create default database instance for backward compatibility
 export const db = new XSavedDatabase();
+
+// Factory function for creating user-specific databases
+export function createUserDatabase(dbName: string): XSavedDatabase {
+  return new XSavedDatabase(dbName);
+}
 
 // Export types for convenience
 export type { BookmarkEntity, TagEntity, CollectionEntity, SettingsEntity };

@@ -74,6 +74,316 @@ let extractionState = {
   percentage: 0
 };
 
+// Multi-user database state tracking
+let currentTwitterUsername: string | null = null;
+let currentTwitterUserId: string | null = null;
+let currentDatabaseName: string | null = null;
+let activeXcomTabId: number | null = null; // Track currently active X.com tab
+
+// ===============================
+// USER DETECTION & DATABASE SWITCHING
+// ===============================
+
+/**
+ * Detect currently logged-in Twitter user using multiple methods
+ * Priority: Cookies > DOM parsing > Cached value
+ * Returns: { username, userId } or null if detection fails
+ */
+async function detectCurrentTwitterUser(): Promise<{ username: string; userId: string | null } | null> {
+  try {
+    console.log('🔍 Detecting current Twitter user...');
+    
+    // ================================================
+    // METHOD 1: Cookie-based detection (most reliable)
+    // ================================================
+    const userFromCookies = await getUserFromCookies();
+    if (userFromCookies) {
+      console.log('✅ User detected from cookies:', userFromCookies);
+      return userFromCookies;
+    }
+    
+    // ================================================
+    // METHOD 2: DOM parsing via content script
+    // ================================================
+    const userFromDom = await getUserFromDom();
+    if (userFromDom) {
+      console.log('✅ User detected from DOM:', userFromDom);
+      return userFromDom;
+    }
+    
+    // ================================================
+    // METHOD 3: Use cached value from previous detection
+    // ================================================
+    const cached = await chrome.storage.local.get([
+      'cached_twitter_username',
+      'cached_twitter_user_id'
+    ]);
+    
+    if (cached.cached_twitter_username) {
+      console.log('⚠️ Using cached username:', cached.cached_twitter_username);
+      return {
+        username: cached.cached_twitter_username,
+        userId: cached.cached_twitter_user_id || null
+      };
+    }
+    
+    console.warn('⚠️ Could not detect user, using default');
+    return { username: 'default', userId: null };
+    
+  } catch (error) {
+    console.error('❌ User detection failed:', error);
+    return { username: 'default', userId: null };
+  }
+}
+
+/**
+ * METHOD 1: Extract user from X.com cookies
+ * Twitter stores user ID in 'twid' cookie format: u=1234567890
+ */
+async function getUserFromCookies(): Promise<{ username: string; userId: string } | null> {
+  try {
+    const cookies = await chrome.cookies.getAll({ domain: '.x.com' });
+    
+    // Check if user is logged in (auth_token must exist)
+    const authToken = cookies.find(c => c.name === 'auth_token');
+    if (!authToken) {
+      console.log('🚫 No auth_token cookie - user is logged out');
+      return null;
+    }
+    
+    // Extract user ID from 'twid' cookie
+    const twidCookie = cookies.find(c => c.name === 'twid');
+    if (twidCookie) {
+      const userIdMatch = twidCookie.value.match(/u=(\d+)/);
+      const userId = userIdMatch?.[1];
+      
+      if (userId) {
+        console.log('🔍 Found Twitter user ID in cookies:', userId);
+        
+        // Try to get username from stored mapping
+        const mapping = await chrome.storage.local.get(['userId_to_username']);
+        const username = mapping.userId_to_username?.[userId];
+        
+        if (username) {
+          console.log('🔍 Mapped user ID to username:', userId, '→', username);
+          return { username, userId };
+        }
+        
+        // If no mapping yet, try to get it from DOM
+        const userFromDom = await getUserFromDom();
+        if (userFromDom?.username) {
+          // Store the mapping for future use
+          await storeUserIdMapping(userId, userFromDom.username);
+          return { username: userFromDom.username, userId };
+        }
+        
+        // Fallback: use user ID as identifier
+        console.warn('⚠️ No username mapping found, using user ID');
+        return { username: `user_${userId}`, userId };
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('❌ Cookie detection failed:', error);
+    return null;
+  }
+}
+
+/**
+ * METHOD 2: Extract username from DOM via content script
+ */
+async function getUserFromDom(): Promise<{ username: string; userId: string | null } | null> {
+  try {
+    // Get all X.com tabs
+    const tabs = await chrome.tabs.query({ url: '*://*.x.com/*' });
+    
+    if (tabs.length === 0) {
+      console.log('⚠️ No X.com tabs open');
+      return null;
+    }
+    
+    // Try active tab first, then others
+    const activeTab = tabs.find(t => t.active) || tabs[0];
+    
+    if (!activeTab?.id) {
+      return null;
+    }
+    
+    // Ask content script for logged-in user
+    try {
+      const response = await chrome.tabs.sendMessage(activeTab.id, {
+        action: 'GET_CURRENT_TWITTER_USER'
+      });
+      
+      if (response?.username) {
+        console.log('🔍 Found username from DOM:', response.username);
+        
+        // Cache the result
+        await chrome.storage.local.set({
+          cached_twitter_username: response.username,
+          cached_twitter_user_id: response.userId || null
+        });
+        
+        return {
+          username: response.username,
+          userId: response.userId || null
+        };
+      }
+    } catch (e) {
+      console.warn('⚠️ Content script not ready or tab not responsive');
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('❌ DOM detection failed:', error);
+    return null;
+  }
+}
+
+/**
+ * Store user ID to username mapping for cookie-based detection
+ */
+async function storeUserIdMapping(userId: string, username: string): Promise<void> {
+  try {
+    const mappings = await chrome.storage.local.get(['userId_to_username']);
+    await chrome.storage.local.set({
+      userId_to_username: {
+        ...(mappings.userId_to_username || {}),
+        [userId]: username
+      }
+    });
+    console.log('📝 Stored user mapping:', userId, '→', username);
+  } catch (error) {
+    console.error('❌ Failed to store user mapping:', error);
+  }
+}
+
+/**
+ * Switch to database for specific Twitter user
+ * Implements "active tab wins" strategy
+ * Closes old DB, opens/creates new DB, updates all references
+ */
+async function switchToUserDatabase(username: string, userId: string | null = null): Promise<void> {
+  const newDbName = `XSavedDB_twitter_${username}`;
+  
+  // Skip if already using this database
+  if (currentDatabaseName === newDbName && serviceWorker.db) {
+    console.log('✅ Already using database for @' + username);
+    return;
+  }
+  
+  console.log('🔄 Switching database:', currentDatabaseName || 'none', '→', newDbName);
+  console.log('👤 User:', currentTwitterUsername || 'none', '→', username);
+  
+  try {
+    // Step 1: Close existing database connection
+    if (serviceWorker.db) {
+      console.log('🔌 Closing old database connection...');
+      await serviceWorker.db.close();
+    }
+    
+    // Step 2: Create new database instance for this user
+    console.log('📂 Opening database:', newDbName);
+    const { createUserDatabase } = await import('../db/index');
+    const newDb = createUserDatabase(newDbName);
+    await newDb.initialize();
+    
+    // Step 3: Update all references
+    serviceWorker.db = newDb;
+    
+    // Update search engine and executor references if they exist
+    if (serviceWorker.searchEngine) {
+      serviceWorker.searchEngine.db = newDb;
+      console.log('🔍 Updated search engine database reference');
+      
+      // CRITICAL: Also update the SearchExecutor's db reference
+      if (serviceWorker.searchEngine.searchExecutor) {
+        serviceWorker.searchEngine.searchExecutor.db = newDb;
+        console.log('🔍 Updated search executor database reference');
+      }
+    }
+    
+    // Step 4: Update global state
+    currentTwitterUsername = username;
+    currentTwitterUserId = userId;
+    currentDatabaseName = newDbName;
+    
+    // Step 5: Store current user for next startup
+    await chrome.storage.local.set({
+      current_twitter_username: username,
+      current_twitter_user_id: userId,
+      current_database_name: newDbName,
+      last_db_switch: Date.now()
+    });
+    
+    console.log('✅ Successfully switched to database for @' + username);
+    
+    // Step 6: Notify UI components of the switch
+    chrome.runtime.sendMessage({
+      action: 'DATABASE_SWITCHED',
+      username: username,
+      userId: userId,
+      dbName: newDbName
+    }).catch(() => {
+      // No listeners yet, that's fine
+    });
+    
+    // Step 7: Notify content scripts
+    const tabs = await chrome.tabs.query({ url: '*://*.x.com/*' });
+    for (const tab of tabs) {
+      if (tab.id) {
+        chrome.tabs.sendMessage(tab.id, {
+          action: 'DATABASE_SWITCHED',
+          username: username,
+          dbName: newDbName
+        }).catch(() => {
+          // Content script not ready yet
+        });
+      }
+    }
+    
+  } catch (error) {
+    console.error('❌ Failed to switch database:', error);
+    throw error;
+  }
+}
+
+/**
+ * Check if Twitter account has changed and switch DB if needed
+ * Called when tabs switch or pages load
+ */
+async function checkAndSwitchIfNeeded(tabId?: number): Promise<void> {
+  try {
+    // Detect current user
+    const detectedUser = await detectCurrentTwitterUser();
+    
+    if (!detectedUser) {
+      console.warn('⚠️ Could not detect user, keeping current database');
+      return;
+    }
+    
+    // Check if user has changed
+    if (detectedUser.username !== currentTwitterUsername) {
+      console.log('🔄 Twitter account change detected!');
+      console.log('   Previous:', currentTwitterUsername || 'none');
+      console.log('   New:', detectedUser.username);
+      
+      await switchToUserDatabase(detectedUser.username, detectedUser.userId);
+    } else {
+      console.log('✅ Same user detected, no database switch needed');
+    }
+    
+    // Update active tab tracker
+    if (tabId) {
+      activeXcomTabId = tabId;
+    }
+    
+  } catch (error) {
+    console.error('❌ Failed to check/switch user:', error);
+  }
+}
+
 // ===============================
 // ENHANCED INITIALIZATION
 // ===============================
@@ -95,34 +405,73 @@ class ExtensionServiceWorker {
     try {
       console.log('🚀 Initializing Enhanced Service Worker...');
       
-      // Initialize IndexedDB (Component 1) - USING STATIC IMPORTS
-      console.log('📀 Initializing IndexedDB...');
+      // ===============================================
+      // STEP 1: Detect current Twitter user FIRST
+      // ===============================================
+      console.log('👤 Detecting current Twitter user...');
+      const detectedUser = await detectCurrentTwitterUser();
+      
+      if (detectedUser) {
+        console.log('✅ Twitter user detected:', detectedUser.username);
+        if (detectedUser.userId) {
+          console.log('   User ID:', detectedUser.userId);
+        }
+      } else {
+        console.warn('⚠️ No user detected, using default database');
+      }
+      
+      // ===============================================
+      // STEP 2: Initialize user-specific database
+      // ===============================================
+      console.log('📀 Initializing user-specific IndexedDB...');
       try {
-        await db.initialize();
-        this.db = db;
-        console.log('✅ IndexedDB initialized successfully');
+        const username = detectedUser?.username || 'default';
+        const userId = detectedUser?.userId || null;
+        
+        // Switch to user-specific database
+        await switchToUserDatabase(username, userId);
+        
+        console.log('✅ IndexedDB initialized for user:', username);
       } catch (error) {
         console.error('❌ Failed to initialize IndexedDB:', error);
         this.db = null;
       }
       
-      // Initialize Search Engine (Component 2) - USING STATIC IMPORTS
+      // ===============================================
+      // STEP 3: Initialize Search Engine
+      // ===============================================
       console.log('🔍 Initializing Search Engine...');
       try {
         this.searchEngine = searchEngine;
+        // Update search engine database reference
+        if (this.searchEngine && this.db) {
+          this.searchEngine.db = this.db;
+          
+          // CRITICAL: Also update the SearchExecutor's db reference
+          if (this.searchEngine.searchExecutor) {
+            this.searchEngine.searchExecutor.db = this.db;
+            console.log('🔍 Updated search executor database reference in init');
+          }
+        }
         console.log('✅ Search Engine initialized successfully:', !!this.searchEngine);
       } catch (error) {
         console.error('❌ Failed to initialize Search Engine:', error);
         this.searchEngine = null;
       }
       
-      // Load existing sync state from chrome.storage
+      // ===============================================
+      // STEP 4: Load existing sync state
+      // ===============================================
       await this.loadSyncState();
       
-      // Set up smart scheduling (keep existing logic)
+      // ===============================================
+      // STEP 5: Set up smart scheduling
+      // ===============================================
       this.setupSmartScheduling();
       
       console.log('✅ Enhanced Service Worker initialized successfully');
+      console.log('   Active database:', currentDatabaseName);
+      console.log('   Active user:', currentTwitterUsername);
       this.initialized = true;
       
       // Dev tag functions are initialized with testXSaved object below
@@ -373,6 +722,15 @@ const extractAllBookmarks = async () => {
   }
 
   await serviceWorker.initialize();
+  
+  // ============================================
+  // NEW: Verify we're using the correct user's database
+  // ============================================
+  console.log('🔍 Verifying database user before extraction...');
+  await checkAndSwitchIfNeeded();
+  console.log('✅ Database verification complete');
+  console.log('   Active database:', currentDatabaseName);
+  console.log('   Active user:', currentTwitterUsername);
   
   isExtracting = true;
   let cursor = null;
@@ -1245,14 +1603,18 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-// Keep existing alarm and activity tracking
-// (Additional existing background.js logic will be adapted in subsequent files)
 
 // User activity tracking + sync on first X.com tab open
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url && tab.url.includes('x.com')) {
     lastUserActivity = Date.now();
     console.log('👤 User activity detected on X.com - page loaded');
+    
+    // ============================================
+    // NEW: Check for account switch on page load
+    // ============================================
+    console.log('🔍 Checking for Twitter account switch...');
+    await checkAndSwitchIfNeeded(tabId);
     
     // Update schedule interval based on activity
     serviceWorker.updateScheduleInterval();
@@ -1279,10 +1641,17 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   }
 });
 
-chrome.tabs.onActivated.addListener((activeInfo) => {
-  chrome.tabs.get(activeInfo.tabId, (tab) => {
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  chrome.tabs.get(activeInfo.tabId, async (tab) => {
     if (tab.url && tab.url.includes('x.com')) {
       lastUserActivity = Date.now();
+      
+      // ============================================
+      // NEW: "Active Tab Wins" - Switch DB when tab becomes active
+      // ============================================
+      console.log('🎯 X.com tab activated - checking for account switch...');
+      await checkAndSwitchIfNeeded(activeInfo.tabId);
+      
       serviceWorker.updateScheduleInterval();
     }
   });

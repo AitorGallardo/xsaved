@@ -1250,9 +1250,130 @@ class XSavedContentScript {
     }
   }
 
+  // ===== USER DETECTION =====
+  /**
+   * Detect logged-in Twitter username from DOM
+   * Uses multiple methods for reliability
+   * Returns: { username, userId } or { username: null, userId: null }
+   */
+  detectLoggedInTwitterUser() {
+    try {
+      console.log('🔍 Detecting logged-in Twitter user from DOM...');
+      
+      // ================================================
+      // METHOD 1: Account switcher button (most reliable)
+      // ================================================
+      const accountSwitcher = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]');
+      if (accountSwitcher) {
+        const profileLink = accountSwitcher.querySelector('a[href^="/"]');
+        if (profileLink) {
+          const href = profileLink.getAttribute('href');
+          const username = href?.replace('/', '');
+          if (username && username !== 'home' && username !== 'compose' && username !== 'messages') {
+            console.log('✅ Found username from account switcher:', username);
+            return { username, userId: null };
+          }
+        }
+      }
+      
+      // ================================================
+      // METHOD 2: Profile link in navigation menu
+      // ================================================
+      const navProfileLink = document.querySelector('nav a[data-testid="AppTabBar_Profile_Link"]');
+      if (navProfileLink) {
+        const href = navProfileLink.getAttribute('href');
+        const username = href?.replace('/', '');
+        if (username) {
+          console.log('✅ Found username from profile link:', username);
+          return { username, userId: null };
+        }
+      }
+      
+      // ================================================
+      // METHOD 3: Settings link parent navigation
+      // ================================================
+      const settingsLink = document.querySelector('a[href="/settings"]');
+      if (settingsLink) {
+        const parentNav = settingsLink.closest('nav');
+        const profileLink = parentNav?.querySelector('a[href^="/"][aria-label]');
+        if (profileLink) {
+          const href = profileLink.getAttribute('href');
+          const match = href?.match(/^\/([^\/]+)$/);
+          if (match) {
+            console.log('✅ Found username from settings navigation:', match[1]);
+            return { username: match[1], userId: null };
+          }
+        }
+      }
+      
+      // ================================================
+      // METHOD 4: Extract from page metadata
+      // ================================================
+      const metaTags = document.querySelectorAll('meta[name="twitter:creator"]');
+      for (const meta of metaTags) {
+        const content = meta.getAttribute('content');
+        if (content && content.startsWith('@')) {
+          const username = content.substring(1);
+          console.log('✅ Found username from meta tag:', username);
+          return { username, userId: null };
+        }
+      }
+      
+      // ================================================
+      // METHOD 5: Look for user data in scripts (last resort)
+      // ================================================
+      try {
+        const scripts = document.querySelectorAll('script');
+        for (const script of scripts) {
+          if (script.textContent?.includes('screen_name')) {
+            const match = script.textContent.match(/"screen_name"\s*:\s*"([^"]+)"/);
+            if (match) {
+              console.log('✅ Found username from page script:', match[1]);
+              return { username: match[1], userId: null };
+            }
+          }
+        }
+      } catch (e) {
+        // Script parsing can fail, that's ok
+      }
+      
+      console.warn('⚠️ Could not detect Twitter username from DOM');
+      return { username: null, userId: null };
+      
+    } catch (error) {
+      console.error('❌ Error detecting Twitter user:', error);
+      return { username: null, userId: null };
+    }
+  }
+
   setupSyncStateListener() {
     // Listen for sync state updates from the service worker
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      // NEW: Handle user detection requests
+      if (message.action === 'GET_CURRENT_TWITTER_USER') {
+        const userInfo = this.detectLoggedInTwitterUser();
+        sendResponse(userInfo);
+        return true; // Keep channel open for async response
+      }
+      
+      // NEW: Handle database switch notifications
+      if (message.action === 'DATABASE_SWITCHED') {
+        console.log('📊 Database switched to @' + message.username);
+        console.log('   Database:', message.dbName);
+        
+        // If grid is active, reload bookmarks for new user
+        if (isGridModeActive && XSAVED_CONFIG.pages.isBookmarksPage()) {
+          console.log('🔄 Reloading grid for new user...');
+          // Reload the page to show new user's bookmarks
+          setTimeout(() => {
+            window.location.reload();
+          }, 500);
+        }
+        
+        return true;
+      }
+      
+      // Existing handlers
       if (message.action === 'stateUpdate' && message.extractionState) {
         this.handleSyncStateUpdate(message.extractionState);
       } else if (message.action === 'bulkDeleteProgress') {

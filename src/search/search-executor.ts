@@ -18,9 +18,11 @@ import { createBookmarkQuery } from '../db/query-builder';
 
 export class SearchExecutor {
   private config: SearchEngineConfig;
+  public db: any; // Database instance (can be swapped for multi-user support)
   
   constructor(config: SearchEngineConfig) {
     this.config = config;
+    this.db = db; // Initialize with default, can be replaced with user-specific DB
   }
 
   /**
@@ -46,7 +48,7 @@ export class SearchExecutor {
       // then doing text search and exclusions in-memory. It was hard to maintain and not optimal for performance.
       // See executeSearchNativeDexie for the new approach.
 
-      await db.initialize();
+      await this.db.initialize();
 
       let candidateBookmarks: BookmarkEntity[] = [];
       
@@ -57,7 +59,7 @@ export class SearchExecutor {
         );
       } else {
         const sortBy = 'created_at';
-        const recentResult = await db.getRecentBookmarks({ 
+        const recentResult = await this.db.getRecentBookmarks({ 
           limit: parsedQuery.limit || Limits.defaultSearchLimit,
           sortBy: sortBy,
           offset: parsedQuery.offset
@@ -178,14 +180,14 @@ export class SearchExecutor {
       });
 
       // Ensure database is ready
-      await db.initialize();
+      await this.db.initialize();
 
       // STEP 1: Convert ParsedQuery to native Dexie query criteria
       const searchCriteria = this.convertParsedQueryToNativeDexie(parsedQuery);
       console.log('🔄 Converted to native Dexie criteria:', searchCriteria);
 
       // STEP 2: Build single native Dexie query using composable builder
-      const queryBuilder = createBookmarkQuery(db.bookmarks);
+      const queryBuilder = createBookmarkQuery(this.db.bookmarks);
       
       // STEP 3: Apply filters conditionally using native Dexie methods
       if (searchCriteria.text) {
@@ -469,7 +471,7 @@ export class SearchExecutor {
    * Search by tag using multi-entry index (fastest)
    */
   private async searchByTag(tag: string): Promise<BookmarkEntity[]> {
-    const result = await db.getBookmarksByTag(tag);
+    const result = await this.db.getBookmarksByTag(tag);
     return result.success ? result.data || [] : [];
   }
 
@@ -479,7 +481,7 @@ export class SearchExecutor {
   private async searchByAuthor(author: string): Promise<BookmarkEntity[]> {
     try {
       // Use native Dexie query - much cleaner!
-      const results = await db.bookmarks
+      const results = await this.db.bookmarks
         .where('author')
         .equalsIgnoreCase(author)
         .reverse()
@@ -500,7 +502,7 @@ export class SearchExecutor {
   private async searchByDateRange(dateRange: { start: string; end: string }): Promise<BookmarkEntity[]> {
     try {
       // Use native Dexie range query - cleaner and more optimized!
-      const results = await db.bookmarks
+      const results = await this.db.bookmarks
         .where('bookmarked_at')
         .between(dateRange.start, dateRange.end)
         .reverse()
@@ -521,7 +523,7 @@ export class SearchExecutor {
   private async searchByTextToken(token: string): Promise<BookmarkEntity[]> {
     try {
       // FIXED: Use proper multi-entry index query for fast exact token matching
-      const results = await db.bookmarks
+      const results = await this.db.bookmarks
         .where('textTokens')
         .anyOfIgnoreCase([token])
         .reverse()
@@ -542,7 +544,7 @@ export class SearchExecutor {
   private async searchBySubstring(tokens: string[], analytics: SearchAnalytics): Promise<BookmarkEntity[]> {
     try {
       // Get all bookmarks for substring search
-      const allBookmarks = await db.bookmarks
+      const allBookmarks = await this.db.bookmarks
         .orderBy('created_at')
         .reverse()
         .limit(Limits.substringSearchLimit) // Reasonable limit for substring search
@@ -618,7 +620,7 @@ export class SearchExecutor {
       
       // Use Dexie's filter method to search across multiple columns
       // This is similar to SQL: WHERE text LIKE '%token%' OR author LIKE '%token%' OR tags CONTAINS 'token'
-      const results = await db.bookmarks
+      const results = await this.db.bookmarks
         .orderBy('created_at')
         .reverse()
         .filter(bookmark => {
@@ -665,7 +667,7 @@ export class SearchExecutor {
   private async searchByMediaPresence(hasMedia: boolean): Promise<BookmarkEntity[]> {
     try {
       // Use Dexie's collection filtering - more efficient than manual scanning
-      const results = await db.bookmarks
+      const results = await this.db.bookmarks
         .filter(bookmark => 
           hasMedia ? 
             (bookmark.media_urls && bookmark.media_urls.length > 0) :

@@ -4,7 +4,7 @@
  */
 
 // Main database class (consolidated Dexie implementation)
-export { XSavedDatabase, db } from './database';
+export { XSavedDatabase, db, createUserDatabase } from './database';
 
 // Type definitions
 export type {
