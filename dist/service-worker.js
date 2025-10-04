@@ -4526,6 +4526,8 @@ let activeXcomTabId = null; // Track currently active X.com tab
  * Detect currently logged-in Twitter user using multiple methods
  * Priority: Cookies > DOM parsing > Cached value
  * Returns: { username, userId } or null if detection fails
+ *
+ * CRITICAL: No fallback to 'default' - if no user detected, return null
  */
 async function detectCurrentTwitterUser() {
     try {
@@ -4553,19 +4555,19 @@ async function detectCurrentTwitterUser() {
             'cached_twitter_username',
             'cached_twitter_user_id'
         ]);
-        if (cached.cached_twitter_username) {
+        if (cached.cached_twitter_username && cached.cached_twitter_username !== 'default') {
             console.log('⚠️ Using cached username:', cached.cached_twitter_username);
             return {
                 username: cached.cached_twitter_username,
                 userId: cached.cached_twitter_user_id || null
             };
         }
-        console.warn('⚠️ Could not detect user, using default');
-        return { username: 'default', userId: null };
+        console.warn('⚠️ No valid user detected - user must be logged in to Twitter');
+        return null; // NO FALLBACK TO DEFAULT
     }
     catch (error) {
         console.error('❌ User detection failed:', error);
-        return { username: 'default', userId: null };
+        return null; // NO FALLBACK TO DEFAULT
     }
 }
 /**
@@ -4575,6 +4577,8 @@ async function detectCurrentTwitterUser() {
 async function getUserFromCookies() {
     try {
         const cookies = await chrome.cookies.getAll({ domain: '.x.com' });
+        console.log('🗄️ Cookies Table:');
+        console.table(cookies);
         // Check if user is logged in (auth_token must exist)
         const authToken = cookies.find(c => c.name === 'auth_token');
         if (!authToken) {
@@ -4583,8 +4587,11 @@ async function getUserFromCookies() {
         }
         // Extract user ID from 'twid' cookie
         const twidCookie = cookies.find(c => c.name === 'twid');
+        console.log('🔍c🍪twidCookie:', twidCookie);
         if (twidCookie) {
-            const userIdMatch = twidCookie.value.match(/u=(\d+)/);
+            // twidCookie.value is URL-encoded, e.g. "u%3D1212476452702056449"
+            const decodedTwid = decodeURIComponent(twidCookie.value); // "u=1212476452702056449"
+            const userIdMatch = decodedTwid.match(/u=(\d+)/);
             const userId = userIdMatch?.[1];
             if (userId) {
                 console.log('🔍 Found Twitter user ID in cookies:', userId);
@@ -4607,6 +4614,7 @@ async function getUserFromCookies() {
                 return { username: `user_${userId}`, userId };
             }
         }
+        console.log('🚫🆔 No twid cookie - user is logged out');
         return null;
     }
     catch (error) {
@@ -4680,8 +4688,15 @@ async function storeUserIdMapping(userId, username) {
  * Switch to database for specific Twitter user
  * Implements "active tab wins" strategy
  * Closes old DB, opens/creates new DB, updates all references
+ *
+ * CRITICAL: Only works with valid usernames (not 'default')
  */
 async function switchToUserDatabase(username, userId = null) {
+    // SECURITY: Block 'default' database usage
+    if (username === 'default') {
+        console.error('❌ SECURITY: Cannot use default database - user must be logged in');
+        throw new Error('No valid user detected - please log in to Twitter');
+    }
     const newDbName = `XSavedDB_twitter_${username}`;
     // Skip if already using this database
     if (currentDatabaseName === newDbName && serviceWorker.db) {
@@ -4756,13 +4771,30 @@ async function switchToUserDatabase(username, userId = null) {
 /**
  * Check if Twitter account has changed and switch DB if needed
  * Called when tabs switch or pages load
+ *
+ * CRITICAL: If no user detected, blocks all operations
  */
 async function checkAndSwitchIfNeeded(tabId) {
     try {
         // Detect current user
         const detectedUser = await detectCurrentTwitterUser();
         if (!detectedUser) {
-            console.warn('⚠️ Could not detect user, keeping current database');
+            console.warn('⚠️ No valid user detected - blocking all operations');
+            // Clear current database to prevent operations
+            if (serviceWorker.db) {
+                await serviceWorker.db.close();
+                serviceWorker.db = null;
+                currentTwitterUsername = null;
+                currentTwitterUserId = null;
+                currentDatabaseName = null;
+            }
+            // Notify UI that user needs to log in
+            chrome.runtime.sendMessage({
+                action: 'USER_NOT_LOGGED_IN',
+                message: 'Please log in to Twitter to use XSaved'
+            }).catch(() => {
+                // No listeners yet, that's fine
+            });
             return;
         }
         // Check if user has changed
@@ -4782,6 +4814,14 @@ async function checkAndSwitchIfNeeded(tabId) {
     }
     catch (error) {
         console.error('❌ Failed to check/switch user:', error);
+        // On error, clear database to prevent operations
+        if (serviceWorker.db) {
+            await serviceWorker.db.close();
+            serviceWorker.db = null;
+            currentTwitterUsername = null;
+            currentTwitterUserId = null;
+            currentDatabaseName = null;
+        }
     }
 }
 // ===============================
@@ -4806,29 +4846,31 @@ class ExtensionServiceWorker {
             // ===============================================
             console.log('👤 Detecting current Twitter user...');
             const detectedUser = await detectCurrentTwitterUser();
-            if (detectedUser) {
-                console.log('✅ Twitter user detected:', detectedUser.username);
-                if (detectedUser.userId) {
-                    console.log('   User ID:', detectedUser.userId);
-                }
+            if (!detectedUser) {
+                console.warn('⚠️ No valid user detected - extension will not function');
+                console.warn('   User must be logged in to Twitter to use XSaved');
+                this.db = null;
+                this.initialized = true; // Mark as initialized but with no database
+                return; // Exit early - no database operations possible
             }
-            else {
-                console.warn('⚠️ No user detected, using default database');
+            console.log('✅ Twitter user detected:', detectedUser.username);
+            if (detectedUser.userId) {
+                console.log('   User ID:', detectedUser.userId);
             }
             // ===============================================
             // STEP 2: Initialize user-specific database
             // ===============================================
             console.log('📀 Initializing user-specific IndexedDB...');
             try {
-                const username = detectedUser?.username || 'default';
-                const userId = detectedUser?.userId || null;
-                // Switch to user-specific database
-                await switchToUserDatabase(username, userId);
-                console.log('✅ IndexedDB initialized for user:', username);
+                // Switch to user-specific database (will throw if username is 'default')
+                await switchToUserDatabase(detectedUser.username, detectedUser.userId);
+                console.log('✅ IndexedDB initialized for user:', detectedUser.username);
             }
             catch (error) {
                 console.error('❌ Failed to initialize IndexedDB:', error);
                 this.db = null;
+                this.initialized = true; // Mark as initialized but with no database
+                return; // Exit early - no database operations possible
             }
             // ===============================================
             // STEP 3: Initialize Search Engine
@@ -5077,11 +5119,24 @@ const extractAllBookmarks = async () => {
     }
     await serviceWorker.initialize();
     // ============================================
-    // NEW: Verify we're using the correct user's database
+    // CRITICAL: Verify we have a valid user before extraction
     // ============================================
-    console.log('🔍 Verifying database user before extraction...');
+    console.log('🔍 Verifying user authentication before extraction...');
     await checkAndSwitchIfNeeded();
-    console.log('✅ Database verification complete');
+    // SECURITY CHECK: Block extraction if no valid user
+    if (!currentTwitterUsername || !serviceWorker.db) {
+        console.error('❌ SECURITY: Cannot extract bookmarks - no valid user detected');
+        console.error('   User must be logged in to Twitter');
+        // Notify UI that user needs to log in
+        chrome.runtime.sendMessage({
+            action: 'EXTRACTION_BLOCKED',
+            message: 'Please log in to Twitter to sync bookmarks'
+        }).catch(() => {
+            // No listeners yet, that's fine
+        });
+        return; // Block extraction
+    }
+    console.log('✅ User verification complete');
     console.log('   Active database:', currentDatabaseName);
     console.log('   Active user:', currentTwitterUsername);
     isExtracting = true;
@@ -5302,6 +5357,16 @@ const handleSearchBookmarks = async (query, sendResponse) => {
     try {
         console.log(`🔍 Service Worker search request:`, query);
         await serviceWorker.initialize();
+        // SECURITY CHECK: Block search if no valid user
+        if (!currentTwitterUsername || !serviceWorker.db) {
+            console.error('❌ SECURITY: Cannot search bookmarks - no valid user detected');
+            sendResponse({
+                success: false,
+                error: 'Please log in to Twitter to search bookmarks',
+                requiresLogin: true
+            });
+            return;
+        }
         console.log(`🔍 Search engine available:`, !!serviceWorker.searchEngine);
         if (serviceWorker.searchEngine) {
             console.log(`🔍 Using search engine for query:`, query);
@@ -5340,6 +5405,16 @@ const handleSearchAuthors = async (query, limit, sendResponse) => {
     try {
         console.log(`👥 Service Worker author search request: "${query}", limit: ${limit}`);
         await serviceWorker.initialize();
+        // SECURITY CHECK: Block search if no valid user
+        if (!currentTwitterUsername || !serviceWorker.db) {
+            console.error('❌ SECURITY: Cannot search authors - no valid user detected');
+            sendResponse({
+                success: false,
+                error: 'Please log in to Twitter to search authors',
+                requiresLogin: true
+            });
+            return;
+        }
         if (serviceWorker.searchEngine) {
             console.log(`👥 Using search engine for author search`);
             const authors = await serviceWorker.searchEngine.searchAuthors(query || '', limit || 10);
@@ -5406,6 +5481,16 @@ const handleGetState = async (sendResponse) => {
 const handleGetStats = async (sendResponse) => {
     try {
         await serviceWorker.initialize();
+        // SECURITY CHECK: Block stats if no valid user
+        if (!currentTwitterUsername || !serviceWorker.db) {
+            console.error('❌ SECURITY: Cannot get stats - no valid user detected');
+            sendResponse({
+                success: false,
+                error: 'Please log in to Twitter to view stats',
+                requiresLogin: true
+            });
+            return;
+        }
         if (serviceWorker.db && serviceWorker.searchEngine) {
             // Get statistics from IndexedDB
             const stats = await serviceWorker.db.getStats();
